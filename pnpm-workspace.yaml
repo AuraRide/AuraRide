@@ -1,0 +1,11 @@
+packages:
+  - '.'
+
+overrides:
+  vite: 6.3.5
+
+# Native packages that need their postinstall build scripts to run
+# (fetch platform binaries). Explicitly allowed instead of trusting all builds.
+allowBuilds:
+  '@tailwindcss/oxide': true
+  esbuild: true
