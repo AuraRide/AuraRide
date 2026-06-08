@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronLeft, MapPin, X } from "lucide-react";
+import { ChevronLeft, MapPin, Sparkles, X } from "lucide-react";
 import { RidePhoto, RideRecord, emotionMeta, loadRides } from "../lib/journal";
+import { seedDemoRides } from "../lib/demoData";
 
 type Tab = "rides" | "colors" | "summary";
 
@@ -24,13 +25,64 @@ function formatMonth(ts: number) {
   return `${d.getFullYear()}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
 }
 
+type Scope = "day" | "week" | "month" | "year";
+
+const DAY_MS = 86400000;
+const p2 = (n: number) => n.toString().padStart(2, "0");
+
+function startOfDay(ts: number) {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// Week starts on Monday.
+function startOfWeek(ts: number) {
+  const d = new Date(startOfDay(ts));
+  const day = (d.getDay() + 6) % 7; // Mon=0 … Sun=6
+  d.setDate(d.getDate() - day);
+  return d.getTime();
+}
+
+function inScope(ts: number, scope: Scope, nowTs: number) {
+  const d = new Date(ts);
+  const now = new Date(nowTs);
+  if (scope === "day") return startOfDay(ts) === startOfDay(nowTs);
+  if (scope === "week") {
+    const s = startOfWeek(nowTs);
+    return ts >= s && ts < s + 7 * DAY_MS;
+  }
+  if (scope === "month")
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  return d.getFullYear() === now.getFullYear();
+}
+
+function scopeLabel(scope: Scope, nowTs: number) {
+  const now = new Date(nowTs);
+  if (scope === "day") return `${now.getFullYear()}.${p2(now.getMonth() + 1)}.${p2(now.getDate())}`;
+  if (scope === "week") {
+    const s = new Date(startOfWeek(nowTs));
+    const e = new Date(startOfWeek(nowTs) + 6 * DAY_MS);
+    return `${p2(s.getMonth() + 1)}.${p2(s.getDate())} – ${p2(e.getMonth() + 1)}.${p2(e.getDate())}`;
+  }
+  if (scope === "month") return `${now.getFullYear()}.${p2(now.getMonth() + 1)}`;
+  return `${now.getFullYear()}`;
+}
+
+const SCOPE_LABELS: Record<Scope, string> = {
+  day: "今日",
+  week: "本周",
+  month: "本月",
+  year: "本年",
+};
+
 export default function Journal() {
   const navigate = useNavigate();
   const [rides, setRides] = useState<RideRecord[]>([]);
   const [tab, setTab] = useState<Tab>("rides");
   const [openRide, setOpenRide] = useState<RideRecord | null>(null);
   const [openColor, setOpenColor] = useState<string | null>(null);
-  const [summaryScope, setSummaryScope] = useState<"month" | "year">("month");
+  const [summaryScope, setSummaryScope] = useState<Scope>("day");
 
   useEffect(() => {
     setRides(loadRides());
@@ -52,16 +104,11 @@ export default function Journal() {
   }, [rides]);
 
   const summaryBuckets = useMemo(() => {
-    const now = new Date();
+    const nowTs = Date.now();
     return COLOR_BUCKETS.map((c) => {
-      const subset = rides.filter((r) => {
-        if (r.colorId !== c) return false;
-        const d = new Date(r.startedAt);
-        if (summaryScope === "month") {
-          return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-        }
-        return d.getFullYear() === now.getFullYear();
-      });
+      const subset = rides.filter(
+        (r) => r.colorId === c && inScope(r.startedAt, summaryScope, nowTs)
+      );
       return {
         colorId: c,
         meta: emotionMeta(c),
@@ -127,7 +174,17 @@ export default function Journal() {
 
       <div className="px-5 py-5">
         {rides.length === 0 ? (
-          <EmptyState onStart={() => navigate("/emotions")} />
+          <EmptyState
+            onStart={() => navigate("/")}
+            onSeed={
+              import.meta.env.DEV
+                ? () => {
+                    seedDemoRides();
+                    setRides(loadRides());
+                  }
+                : undefined
+            }
+          />
         ) : tab === "rides" ? (
           <RidesList rides={rides} onOpen={setOpenRide} />
         ) : tab === "colors" ? (
@@ -170,7 +227,18 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function EmptyState({ onStart }: { onStart: () => void }) {
+function MiniStat({ value, label }: { value: string; label: string }) {
+  return (
+    <div>
+      <div className="text-[19px] font-light tabular-nums leading-none text-white/95">{value}</div>
+      <div className="font-serif-cn text-[9px] tracking-[0.25em] text-white/45 mt-1.5" style={{ fontWeight: 500 }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ onStart, onSeed }: { onStart: () => void; onSeed?: () => void }) {
   return (
     <div className="text-center py-24">
       <div className="font-serif-cn text-[12px] tracking-[0.3em] text-white/35" style={{ fontWeight: 400 }}>
@@ -183,6 +251,19 @@ function EmptyState({ onStart }: { onStart: () => void }) {
       >
         开始探索
       </button>
+      {onSeed && (
+        <div className="mt-10">
+          <button
+            onClick={onSeed}
+            className="px-5 py-2 rounded-full border border-dashed border-white/15 font-serif-cn text-[10px] tracking-[0.3em] text-white/40 active:scale-95 transition-transform"
+          >
+            载入演示数据
+          </button>
+          <div className="font-serif-cn text-[9px] tracking-[0.2em] text-white/20 mt-2">
+            仅开发预览 · 注入示例骑行与照片
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -351,23 +432,47 @@ function SummaryView({
     duration: number;
   }>;
   total: number;
-  scope: "month" | "year";
-  onScope: (s: "month" | "year") => void;
+  scope: Scope;
+  onScope: (s: Scope) => void;
   onOpenColor: (id: string) => void;
 }) {
-  const now = new Date();
-  const scopeLabel = scope === "month" ? formatMonth(now.getTime()) : `${now.getFullYear()}`;
+  const navigate = useNavigate();
+  const label = scopeLabel(scope, Date.now());
   const totalDistance = buckets.reduce((a, b) => a + b.distance, 0);
   const totalDuration = buckets.reduce((a, b) => a + b.duration, 0);
+  const totalPhotos = buckets.reduce((a, b) => a + b.photos, 0);
+  const active = buckets.filter((b) => b.count > 0).sort((a, b) => b.count - a.count);
+  const dominant = active[0]?.meta.color || "#4FA8FF";
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        {(["month", "year"] as const).map((s) => (
+      {/* Entry to the photo overview story */}
+      <button
+        onClick={() => navigate("/overview")}
+        className="w-full rounded-2xl px-4 py-3.5 flex items-center justify-between active:scale-[0.99] transition-transform overflow-hidden relative"
+        style={{
+          background:
+            "linear-gradient(110deg, rgba(79,168,255,0.18), rgba(52,232,158,0.12) 45%, rgba(255,181,74,0.16))",
+          border: "1px solid rgba(255,255,255,0.12)",
+        }}
+      >
+        <div className="text-left">
+          <div className="font-serif-cn text-[12px] tracking-[0.3em] text-white/95" style={{ fontWeight: 600 }}>
+            旅程全览
+          </div>
+          <div className="font-serif-cn text-[10px] tracking-[0.2em] text-white/50 mt-1" style={{ fontWeight: 400 }}>
+            把照片汇成一段动画
+          </div>
+        </div>
+        <Sparkles size={16} className="text-white/80" />
+      </button>
+
+      <div className="flex gap-1.5">
+        {(["day", "week", "month", "year"] as Scope[]).map((s) => (
           <button
             key={s}
             onClick={() => onScope(s)}
-            className="px-4 py-2 rounded-full border font-serif-cn text-[11px] tracking-[0.3em] transition-all"
+            className="flex-1 py-2 rounded-full border font-serif-cn text-[11px] tracking-[0.2em] transition-all"
             style={{
               borderColor: scope === s ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.15)",
               backgroundColor: scope === s ? "rgba(255,255,255,0.12)" : "transparent",
@@ -375,88 +480,124 @@ function SummaryView({
               fontWeight: 500,
             }}
           >
-            {s === "month" ? "本月" : "本年"}
+            {SCOPE_LABELS[s]}
           </button>
         ))}
-        <div className="flex-1" />
-        <div className="self-center font-serif-cn text-[11px] tracking-[0.3em] text-white/45" style={{ fontWeight: 500 }}>
-          {scopeLabel}
-        </div>
+      </div>
+      <div className="text-center font-serif-cn text-[11px] tracking-[0.3em] text-white/45" style={{ fontWeight: 500 }}>
+        {label}
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 flex items-center justify-around">
-        <div className="text-center">
-          <div className="text-[28px] font-light tabular-nums leading-none">{totalDistance.toFixed(1)}</div>
-          <div className="font-serif-cn text-[10px] tracking-[0.3em] text-white/45 mt-1.5" style={{ fontWeight: 500 }}>km</div>
-        </div>
-        <span className="w-px h-10 bg-white/10" />
-        <div className="text-center">
-          <div className="text-[28px] font-light tabular-nums leading-none">{total}</div>
-          <div className="font-serif-cn text-[10px] tracking-[0.3em] text-white/45 mt-1.5" style={{ fontWeight: 500 }}>次骑行</div>
-        </div>
-        <span className="w-px h-10 bg-white/10" />
-        <div className="text-center">
-          <div className="text-[28px] font-light tabular-nums leading-none">{Math.round(totalDuration / 60)}</div>
-          <div className="font-serif-cn text-[10px] tracking-[0.3em] text-white/45 mt-1.5" style={{ fontWeight: 500 }}>min</div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <div className="font-serif-cn text-[10px] tracking-[0.35em] text-white/45 mb-3" style={{ fontWeight: 500 }}>
-          颜色分布
-        </div>
-        {total === 0 ? (
-          <div className="font-serif-cn text-[11px] tracking-[0.25em] text-white/35 py-4 text-center" style={{ fontWeight: 400 }}>
-            该时间段尚无骑行
+      {/* Hero — distance, tinted by the period's dominant emotion */}
+      <motion.div
+        key={`hero-${scope}`}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="rounded-3xl p-5 relative overflow-hidden"
+        style={{
+          border: `1px solid ${dominant}44`,
+          background: `linear-gradient(160deg, ${dominant}22, rgba(255,255,255,0.02) 55%)`,
+          boxShadow: `0 0 30px ${dominant}1f`,
+        }}
+      >
+        <div
+          aria-hidden
+          className="absolute -top-12 -right-10 w-44 h-44 rounded-full blur-3xl"
+          style={{ background: `${dominant}33` }}
+        />
+        <div className="relative">
+          <div className="font-serif-cn text-[10px] tracking-[0.35em] text-white/45" style={{ fontWeight: 500 }}>
+            {SCOPE_LABELS[scope]}共骑行
           </div>
-        ) : (
-          <>
-            <div className="flex h-2.5 rounded-full overflow-hidden bg-white/5">
-              {buckets.map((b) => (
-                <div
-                  key={b.colorId}
-                  style={{
-                    width: `${(b.count / total) * 100}%`,
-                    backgroundColor: b.meta.color,
-                    boxShadow: `0 0 8px ${b.meta.color}88`,
-                  }}
-                />
-              ))}
+          <div className="flex items-baseline gap-2 mt-1.5">
+            <span
+              className="text-[52px] leading-none font-extralight tabular-nums"
+              style={{ textShadow: `0 0 28px ${dominant}55` }}
+            >
+              {totalDistance.toFixed(1)}
+            </span>
+            <span className="text-[16px] font-light" style={{ color: `${dominant}dd` }}>
+              km
+            </span>
+          </div>
+          <div className="flex items-center gap-5 mt-5">
+            <MiniStat value={`${total}`} label="次骑行" />
+            <span className="w-px h-7 bg-white/10" />
+            <MiniStat value={`${Math.round(totalDuration / 60)}`} label="分钟" />
+            <span className="w-px h-7 bg-white/10" />
+            <MiniStat value={`${totalPhotos}`} label="个瞬间" />
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Emotion spectrum */}
+      {total === 0 ? (
+        <div className="rounded-3xl border border-white/10 bg-white/[0.02] py-14 text-center">
+          <div className="font-serif-cn text-[11px] tracking-[0.3em] text-white/35" style={{ fontWeight: 400 }}>
+            {SCOPE_LABELS[scope]}还没有骑行
+          </div>
+          <div className="font-serif-cn text-[10px] tracking-[0.2em] text-white/20 mt-2" style={{ fontWeight: 400 }}>
+            去骑一段，留下你的颜色
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="font-serif-cn text-[11px] tracking-[0.35em] text-white/60" style={{ fontWeight: 500 }}>
+              情绪光谱
             </div>
-            <div className="mt-4 space-y-2.5">
-              {buckets
-                .filter((b) => b.count > 0)
-                .map((b) => (
-                  <button
-                    key={b.colorId}
-                    onClick={() => onOpenColor(b.colorId)}
-                    className="w-full flex items-center justify-between active:scale-[0.99] transition-transform"
-                  >
-                    <div className="flex items-center gap-2.5">
+            <div className="font-serif-cn text-[9px] tracking-[0.2em] text-white/30" style={{ fontWeight: 400 }}>
+              点按看照片 →
+            </div>
+          </div>
+          <div className="space-y-3.5">
+            {active.map((b, i) => {
+              const pct = Math.round((b.count / total) * 100);
+              return (
+                <motion.button
+                  key={b.colorId}
+                  onClick={() => onOpenColor(b.colorId)}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4, delay: 0.1 + i * 0.07 }}
+                  className="w-full text-left active:scale-[0.99] transition-transform"
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
                       <span
                         className="w-2.5 h-2.5 rounded-full"
                         style={{ backgroundColor: b.meta.color, boxShadow: `0 0 8px ${b.meta.color}` }}
                       />
-                      <span className="font-serif-cn text-[12px] tracking-[0.25em]" style={{ color: `${b.meta.color}ee`, fontWeight: 500 }}>
+                      <span className="font-serif-cn text-[12px] tracking-[0.2em]" style={{ color: `${b.meta.color}ee`, fontWeight: 500 }}>
                         {b.meta.cn}
                       </span>
-                      <span className="font-serif-cn text-[10px] tracking-[0.2em] text-white/35" style={{ fontWeight: 400 }}>
-                        · {b.photos} 张
+                      <span className="font-serif-cn text-[9px] tracking-[0.25em] text-white/30" style={{ fontWeight: 500 }}>
+                        {b.meta.en}
                       </span>
                     </div>
-                    <div className="font-serif-cn text-[11px] tracking-[0.2em] text-white/70 tabular-nums" style={{ fontWeight: 500 }}>
-                      {b.count} 次 · {b.distance.toFixed(1)} km
+                    <div className="font-serif-cn text-[10px] tracking-[0.12em] text-white/55 tabular-nums" style={{ fontWeight: 500 }}>
+                      {b.count}次 · {b.distance.toFixed(1)}km · {b.photos}张
                     </div>
-                  </button>
-                ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="font-serif-cn text-[10px] tracking-[0.3em] text-white/30 text-center pt-2" style={{ fontWeight: 400 }}>
-        点击颜色查看该色调下的所有照片
-      </div>
+                  </div>
+                  <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                    <motion.div
+                      className="h-full rounded-full"
+                      style={{
+                        background: `linear-gradient(90deg, ${b.meta.color}bb, ${b.meta.color})`,
+                        boxShadow: `0 0 10px ${b.meta.color}99`,
+                      }}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.max(pct, 4)}%` }}
+                      transition={{ duration: 0.7, delay: 0.2 + i * 0.07, ease: "easeOut" }}
+                    />
+                  </div>
+                </motion.button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

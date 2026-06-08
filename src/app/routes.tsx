@@ -14,6 +14,7 @@ import EnhancedRidingHUD from "./pages/EnhancedRidingHUD";
 import Review from "./pages/Review";
 import WatchRiding from "./pages/WatchRiding";
 import Journal from "./pages/Journal";
+import Overview from "./pages/Overview";
 
 export const router = createBrowserRouter([
   {
@@ -79,5 +80,9 @@ export const router = createBrowserRouter([
   {
     path: "/journal",
     Component: Journal,
+  },
+  {
+    path: "/overview",
+    Component: Overview,
   },
 ]);

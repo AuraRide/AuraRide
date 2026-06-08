@@ -33,6 +33,15 @@ export function loadRides(): RideRecord[] {
   }
 }
 
+// Replace the whole ride list (used by demo seeding).
+export function replaceAllRides(rides: RideRecord[]) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(rides));
+  } catch {
+    /* ignore quota */
+  }
+}
+
 export function saveRide(ride: RideRecord) {
   const rides = loadRides();
   rides.unshift(ride);
