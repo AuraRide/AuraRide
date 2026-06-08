@@ -12,6 +12,7 @@ import {
 import WeatherEffects from "../components/WeatherEffects";
 import CheckpointMarker from "../components/CheckpointMarker";
 import { getCheckpointMessage } from "../data/checkpointMessages";
+import { useGeolocation } from "../lib/useGeolocation";
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import mapBgGreen from "../../imports/image.png";
 import mapBgGray from "../../imports/image-4.png";
@@ -144,7 +145,6 @@ export default function EnhancedRidingHUD() {
   const [duration, setDuration] = useState(0);
   const [heartRate, setHeartRate] = useState(85);
   const [isPaused, setIsPaused] = useState(false);
-  const [terrain, setTerrain] = useState<"asphalt" | "gravel" | "cobblestone">("asphalt");
   const [weather, setWeather] = useState<"clear" | "rain" | "wind" | "cloudy" | "sunset">("clear");
   const [windDirection, setWindDirection] = useState<"head" | "tail">("tail");
   const [reachedCheckpoints, setReachedCheckpoints] = useState<number[]>([]);
@@ -152,6 +152,18 @@ export default function EnhancedRidingHUD() {
   const [checkpointMessages, setCheckpointMessages] = useState<
     Array<{ message: string; subtitle: string }>
   >([]);
+
+  // Real satellite positioning — drives speed & distance on a phone. Falls back
+  // to a gentle simulation when there is no fix (desktop preview / denied perms).
+  const gps = useGeolocation({ paused: isPaused });
+  const usingGps = gps.status === "tracking";
+
+  // Refs let the distance-watcher effect read fresh speed / heart-rate without
+  // re-subscribing every tick.
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
+  const heartRateRef = useRef(heartRate);
+  heartRateRef.current = heartRate;
 
   // Initialize checkpoint messages on mount
   useEffect(() => {
@@ -166,102 +178,80 @@ export default function EnhancedRidingHUD() {
     setCheckpointMessages(messages);
   }, []);
 
+  // Real elapsed riding time (seconds), paused-aware.
   useEffect(() => {
     if (isPaused) return;
-
-    const interval = setInterval(() => {
-      let currentSpeed = 0;
-      let currentHeartRate = 0;
-
-      setSpeed((prev) => {
-        const newSpeed = Math.max(0, prev + (Math.random() - 0.5) * 4);
-        currentSpeed = Math.min(35, newSpeed);
-        return currentSpeed;
-      });
-
-      setHeartRate((prev) => {
-        const change = Math.random() - 0.5;
-        currentHeartRate = Math.max(60, Math.min(180, prev + change * 3));
-        return currentHeartRate;
-      });
-
-      setDistance((prev) => {
-        const newDistance = prev + 0.15;
-
-        // Check checkpoints
-        checkpointsBase.forEach((checkpoint, index) => {
-          const distanceToCheckpoint = Math.abs(newDistance - checkpoint.distance);
-
-          setReachedCheckpoints((prevReached) => {
-            if (distanceToCheckpoint < 0.4 && !prevReached.includes(index)) {
-              setNearbyCheckpoint(index);
-            }
-
-            if (distanceToCheckpoint < 0.2 && !prevReached.includes(index)) {
-              setNearbyCheckpoint(null);
-
-              // Update message with current context
-              const context = {
-                ...checkpoint.context,
-                isClimbing: currentHeartRate > 140,
-                isHighSpeed: currentSpeed > 25,
-              };
-              const newMessage = getCheckpointMessage(context);
-              setCheckpointMessages((prevMessages) => {
-                const updated = [...prevMessages];
-                updated[index] = newMessage;
-                return updated;
-              });
-
-              // Haptic feedback
-              if (navigator.vibrate) {
-                navigator.vibrate([30, 20, 30]);
-              }
-
-              // Hide message after 4 seconds
-              setTimeout(() => {
-                setReachedCheckpoints((prev) => prev.filter((i) => i !== index));
-              }, 1500);
-
-              return [...prevReached, index];
-            }
-
-            return prevReached;
-          });
-        });
-
-        // Smart weather system - changes based on distance milestones
-        if (newDistance > 0 && newDistance < 2) {
-          setWeather("clear");
-        } else if (newDistance >= 2 && newDistance < 4) {
-          setWeather("cloudy");
-        } else if (newDistance >= 4 && newDistance < 6) {
-          setWeather("wind");
-          setWindDirection(currentSpeed > 20 ? "tail" : "head");
-        } else if (newDistance >= 6 && newDistance < 8) {
-          setWeather("rain");
-        } else if (newDistance >= 8) {
-          setWeather("sunset");
-        }
-
-        return newDistance;
-      });
-
-      setDuration((prev) => prev + 4);
-
-      // Simulate terrain changes
-      if (Math.random() > 0.98) {
-        const terrains: Array<"asphalt" | "gravel" | "cobblestone"> = [
-          "asphalt",
-          "gravel",
-          "cobblestone",
-        ];
-        setTerrain(terrains[Math.floor(Math.random() * terrains.length)]);
-      }
-    }, 250);
-
-    return () => clearInterval(interval);
+    const id = setInterval(() => setDuration((d) => d + 1), 1000);
+    return () => clearInterval(id);
   }, [isPaused]);
+
+  // Heart rate has no sensor in the browser — keep a gentle simulated trace
+  // until a wearable / HealthKit integration replaces it.
+  useEffect(() => {
+    if (isPaused) return;
+    const id = setInterval(() => {
+      setHeartRate((p) => Math.max(60, Math.min(180, p + (Math.random() - 0.5) * 4)));
+    }, 1500);
+    return () => clearInterval(id);
+  }, [isPaused]);
+
+  // GPS is the source of truth for speed & distance whenever we have a fix.
+  useEffect(() => {
+    if (gps.status !== "tracking") return;
+    setSpeed(isPaused ? 0 : gps.speedKmh);
+    setDistance(gps.distanceKm);
+  }, [gps.status, gps.speedKmh, gps.distanceKm, isPaused]);
+
+  // Fallback motion when there's no GPS fix (desktop preview / denied / locating)
+  // so the HUD still feels alive. GPS takes over the moment a fix arrives.
+  useEffect(() => {
+    if (isPaused || gps.status === "tracking") return;
+    const id = setInterval(() => {
+      setSpeed((prev) => Math.min(35, Math.max(0, prev + (Math.random() - 0.5) * 4)));
+      setDistance((prev) => prev + 0.05);
+    }, 250);
+    return () => clearInterval(id);
+  }, [isPaused, gps.status]);
+
+  // Weather + checkpoint reactions, driven by distance regardless of its source.
+  useEffect(() => {
+    if (distance > 0 && distance < 2) setWeather("clear");
+    else if (distance >= 2 && distance < 4) setWeather("cloudy");
+    else if (distance >= 4 && distance < 6) {
+      setWeather("wind");
+      setWindDirection(speedRef.current > 20 ? "tail" : "head");
+    } else if (distance >= 6 && distance < 8) setWeather("rain");
+    else if (distance >= 8) setWeather("sunset");
+
+    checkpointsBase.forEach((checkpoint, index) => {
+      const gap = Math.abs(distance - checkpoint.distance);
+      setReachedCheckpoints((prevReached) => {
+        if (gap < 0.4 && !prevReached.includes(index)) {
+          setNearbyCheckpoint(index);
+        }
+        if (gap < 0.2 && !prevReached.includes(index)) {
+          setNearbyCheckpoint(null);
+          const context = {
+            ...checkpoint.context,
+            isClimbing: heartRateRef.current > 140,
+            isHighSpeed: speedRef.current > 25,
+          };
+          const newMessage = getCheckpointMessage(context);
+          setCheckpointMessages((prevMessages) => {
+            const updated = [...prevMessages];
+            updated[index] = newMessage;
+            return updated;
+          });
+          if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+          setTimeout(() => {
+            setReachedCheckpoints((prev) => prev.filter((i) => i !== index));
+          }, 1500);
+          return [...prevReached, index];
+        }
+        return prevReached;
+      });
+    });
+  }, [distance]);
 
   const openPhotoSheet = () => {
     setDraftDataUrl(null);
@@ -719,6 +709,29 @@ export default function EnhancedRidingHUD() {
           <span className="text-[11px] tracking-[0.2em] text-white/70 font-light tabular-nums">
             {distance.toFixed(1)} / 10.3 km
           </span>
+
+          {/* Satellite positioning status */}
+          <span
+            className="text-[10px] tracking-[0.15em] font-light tabular-nums flex items-center gap-1.5"
+            style={{ color: usingGps ? "#34E89E" : "rgba(255,255,255,0.5)" }}
+          >
+            <motion.span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                backgroundColor: usingGps ? "#34E89E" : "rgba(255,255,255,0.45)",
+                boxShadow: usingGps ? "0 0 6px #34E89E" : "none",
+              }}
+              animate={gps.status === "locating" ? { opacity: [0.3, 1, 0.3] } : { opacity: 1 }}
+              transition={gps.status === "locating" ? { duration: 1, repeat: Infinity } : {}}
+            />
+            {gps.status === "tracking" &&
+              `GPS · 精度 ${gps.accuracy != null ? Math.round(gps.accuracy) : "--"}m`}
+            {gps.status === "locating" && "定位中…"}
+            {gps.status === "denied" && "定位被拒 · 模拟"}
+            {gps.status === "unavailable" && "无定位 · 模拟"}
+            {gps.status === "idle" && "准备定位"}
+          </span>
+
           <span className="text-[11px] tracking-[0.25em] font-light text-white/70 tabular-nums">
             {Math.floor(duration / 60).toString().padStart(2, "0")}
             :{(duration % 60).toString().padStart(2, "0")}
