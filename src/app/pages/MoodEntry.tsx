@@ -142,13 +142,6 @@ export default function MoodEntry() {
           生成我的颜色
           <ArrowRight size={18} />
         </button>
-
-        <button
-          onClick={() => navigate("/journal")}
-          className="mt-4 w-full text-center text-xs font-light text-white/40 hover:text-white/70 transition-colors"
-        >
-          我的旅程
-        </button>
       </motion.div>
     </div>
   );

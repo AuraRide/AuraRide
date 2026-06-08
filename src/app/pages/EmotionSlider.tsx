@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence, useMotionValue, useTransform, PanInfo } from "motion/react";
-import { X } from "lucide-react";
+import { History, User, X } from "lucide-react";
 import FluidCanvas from "../components/FluidCanvas";
 import EmotionEffects from "../components/EmotionEffects";
 
@@ -165,6 +165,52 @@ export default function EmotionSlider() {
       {/* Emotion-Specific Effects */}
       <EmotionEffects emotionId={currentEmotion.id} color={currentEmotion.color} />
 
+      {/* Journal entry — always-visible pill, top-left */}
+      <motion.button
+        onClick={() => navigate("/journal")}
+        className="absolute top-7 left-5 z-20 flex items-center gap-1.5 pl-2.5 pr-3 h-9 rounded-full backdrop-blur-xl border active:scale-95 transition-transform"
+        style={{
+          borderColor: `${currentEmotion.logoGradient[0]}66`,
+          backgroundColor: "rgba(255,255,255,0.06)",
+          boxShadow: `0 0 16px ${currentEmotion.logoGradient[0]}33`,
+        }}
+        initial={{ opacity: 0, x: -12 }}
+        animate={isSinking ? { opacity: 0, x: -12 } : { opacity: 1, x: 0 }}
+        transition={{ delay: 0.6, duration: 0.6 }}
+        aria-label="我的旅程"
+      >
+        <History size={14} style={{ color: currentEmotion.logoGradient[0] }} />
+        <span
+          className="font-serif-cn text-[10px] tracking-[0.25em] text-white/85"
+          style={{ fontWeight: 500 }}
+        >
+          旅程
+        </span>
+      </motion.button>
+
+      {/* Login entry — pill, top-right (symmetric with the journal pill) */}
+      <motion.button
+        onClick={() => setShowLoginSheet(true)}
+        className="absolute top-7 right-5 z-20 flex items-center gap-1.5 pl-2.5 pr-3 h-9 rounded-full backdrop-blur-xl border active:scale-95 transition-transform"
+        style={{
+          borderColor: `${currentEmotion.logoGradient[0]}66`,
+          backgroundColor: "rgba(255,255,255,0.06)",
+          boxShadow: `0 0 16px ${currentEmotion.logoGradient[0]}33`,
+        }}
+        initial={{ opacity: 0, x: 12 }}
+        animate={isSinking ? { opacity: 0, x: 12 } : { opacity: 1, x: 0 }}
+        transition={{ delay: 0.6, duration: 0.6 }}
+        aria-label="登录 / 注册"
+      >
+        <User size={14} style={{ color: currentEmotion.logoGradient[0] }} />
+        <span
+          className="font-serif-cn text-[10px] tracking-[0.25em] text-white/85"
+          style={{ fontWeight: 500 }}
+        >
+          登录
+        </span>
+      </motion.button>
+
       {/* App Name with Icon — centered hero */}
       <motion.div
         className="absolute top-20 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center"
@@ -310,9 +356,9 @@ export default function EmotionSlider() {
         </div>
       </motion.div>
 
-      {/* Pagination Indicators */}
+      {/* Pagination Indicators — moved to bottom-center (top corners are pills now) */}
       <motion.div
-        className="absolute top-8 right-8 flex gap-2 z-20"
+        className="absolute bottom-32 left-1/2 -translate-x-1/2 flex gap-2 z-20"
         animate={
           isSinking
             ? {
@@ -501,24 +547,6 @@ export default function EmotionSlider() {
           </span>
         </motion.button>
 
-        {/* Footer links */}
-        <div className="mt-5 flex items-center gap-5">
-          <button
-            onClick={() => navigate("/journal")}
-            className="font-serif-cn text-[11px] tracking-[0.3em] transition-opacity hover:opacity-100"
-            style={{ color: "rgba(255,255,255,0.55)", fontWeight: 400, opacity: 0.75 }}
-          >
-            我的旅程
-          </button>
-          <span className="text-white/20">·</span>
-          <button
-            onClick={() => setShowLoginSheet(true)}
-            className="font-serif-cn text-[11px] tracking-[0.3em] transition-opacity hover:opacity-100"
-            style={{ color: "rgba(255,255,255,0.5)", fontWeight: 400, opacity: 0.7 }}
-          >
-            登录 / 注册
-          </button>
-        </div>
       </motion.div>
 
       {/* Sink Transition Effect — disabled */}
