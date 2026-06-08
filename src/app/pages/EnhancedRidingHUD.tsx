@@ -13,6 +13,8 @@ import WeatherEffects from "../components/WeatherEffects";
 import CheckpointMarker from "../components/CheckpointMarker";
 import { getCheckpointMessage } from "../data/checkpointMessages";
 import { useGeolocation } from "../lib/useGeolocation";
+import RideMap from "../components/RideMap";
+import { type LatLng } from "../lib/gcj02";
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import mapBgGreen from "../../imports/image.png";
 import mapBgGray from "../../imports/image-4.png";
@@ -158,12 +160,34 @@ export default function EnhancedRidingHUD() {
   const gps = useGeolocation({ paused: isPaused });
   const usingGps = gps.status === "tracking";
 
+  // The ride's path, oldest → newest (raw WGS-84). Drawn by RideMap.
+  const [track, setTrack] = useState<LatLng[]>([]);
+
   // Refs let the distance-watcher effect read fresh speed / heart-rate without
   // re-subscribing every tick.
   const speedRef = useRef(speed);
   speedRef.current = speed;
   const heartRateRef = useRef(heartRate);
   heartRateRef.current = heartRate;
+  // Dedup key for real GPS points + a wandering synthetic position used when
+  // there is no fix, so the trace still draws in preview / on GPS-less devices.
+  const lastAppendedRef = useRef<string>("");
+  const synthRef = useRef({ lat: 31.24, lng: 121.49, heading: Math.PI / 4 });
+
+  const pushPoint = (lat: number, lng: number) =>
+    setTrack((t) => {
+      const next = [...t, { lat, lng }];
+      return next.length > 600 ? next.slice(next.length - 600) : next;
+    });
+
+  // Append real GPS fixes to the track.
+  useEffect(() => {
+    if (gps.status !== "tracking" || gps.lat == null || gps.lng == null) return;
+    const key = `${gps.lat.toFixed(6)},${gps.lng.toFixed(6)}`;
+    if (key === lastAppendedRef.current) return;
+    lastAppendedRef.current = key;
+    pushPoint(gps.lat, gps.lng);
+  }, [gps.lat, gps.lng, gps.status]);
 
   // Initialize checkpoint messages on mount
   useEffect(() => {
@@ -209,6 +233,13 @@ export default function EnhancedRidingHUD() {
     const id = setInterval(() => {
       setSpeed((prev) => Math.min(35, Math.max(0, prev + (Math.random() - 0.5) * 4)));
       setDistance((prev) => prev + 0.05);
+      // Wander a synthetic position so the trace canvas has a path to draw.
+      const s = synthRef.current;
+      s.heading += (Math.random() - 0.5) * 0.6;
+      const step = 0.00012; // ~13m per tick
+      s.lat += Math.sin(s.heading) * step * 0.6;
+      s.lng += Math.cos(s.heading) * step;
+      pushPoint(s.lat, s.lng);
     }, 250);
     return () => clearInterval(id);
   }, [isPaused, gps.status]);
@@ -347,14 +378,10 @@ export default function EnhancedRidingHUD() {
         </motion.div>
       </AnimatePresence>
 
-      {/* Aerial Map Background (reused from RouteGeneration) */}
+      {/* Live map + GPS trace (real 高德 map when VITE_AMAP_KEY is set, else a
+          trace canvas drawing the actual path shape). */}
       <div className="absolute inset-0">
-        <ImageWithFallback
-          src={mapBgByColor[colorId] || mapBgGreen}
-          alt="情绪地图"
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{ filter: "brightness(0.6) saturate(1.05)" }}
-        />
+        <RideMap track={track} themeColor={themeColor} />
         {/* Vignette to keep HUD readable */}
         <div
           className="absolute inset-0 pointer-events-none"
@@ -364,7 +391,9 @@ export default function EnhancedRidingHUD() {
           }}
         />
 
-        {/* Glowing waypoint route + traveled progress */}
+        {/* Live GPS trace is now drawn by RideMap above; the synthetic
+            planned-route overlay is kept here but disabled. */}
+        {false && (
         <svg
           className="absolute inset-0 w-full h-full"
           viewBox="0 0 360 780"
@@ -496,6 +525,7 @@ export default function EnhancedRidingHUD() {
             );
           })()}
         </svg>
+        )}
       </div>
 
       {/* deprecated: original synthetic city map */}
