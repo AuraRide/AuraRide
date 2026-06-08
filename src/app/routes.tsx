@@ -1,4 +1,6 @@
 import { createBrowserRouter } from "react-router";
+import MoodEntry from "./pages/MoodEntry";
+import ColorReveal from "./pages/ColorReveal";
 import EmotionSlider from "./pages/EmotionSlider";
 import ColorCompass from "./pages/ColorCompass";
 import DeepSeaState from "./pages/DeepSeaState";
@@ -17,6 +19,14 @@ export const router = createBrowserRouter([
   {
     path: "/",
     Component: EmotionSlider,
+  },
+  {
+    path: "/mood",
+    Component: MoodEntry,
+  },
+  {
+    path: "/color",
+    Component: ColorReveal,
   },
   {
     path: "/emotions",

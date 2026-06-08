@@ -74,9 +74,7 @@ export default function EmotionSlider() {
   const [isHolding, setIsHolding] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
   const [isSinking, setIsSinking] = useState(false);
-  const [moodText, setMoodText] = useState("");
-  const [showMoodSheet, setShowMoodSheet] = useState(false);
-  const [moodDraft, setMoodDraft] = useState("");
+  const [showLoginSheet, setShowLoginSheet] = useState(false);
 
   const dragX = useMotionValue(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -119,7 +117,7 @@ export default function EmotionSlider() {
 
       setTimeout(() => {
         const emotion = emotions[currentIndex];
-        navigate(emotion.route, { state: { colorId: emotion.colorId } });
+        navigate("/mood", { state: { colorId: emotion.colorId } });
       }, 1500);
     }
   }, [isSinking, currentIndex, navigate]);
@@ -460,32 +458,12 @@ export default function EmotionSlider() {
         }
         transition={{ duration: 0.6 }}
       >
-        {/* Free-form mood — tap to open the sheet */}
-        <button
-          onClick={() => {
-            setMoodDraft(moodText);
-            setShowMoodSheet(true);
-          }}
-          className="w-full max-w-xs mb-4 bg-transparent border-b font-serif-cn text-center outline-none transition-colors active:scale-[0.99]"
-          style={{
-            borderColor: `${currentEmotion.logoGradient[0]}55`,
-            color: moodText ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.45)",
-            fontSize: 12,
-            letterSpacing: "0.18em",
-            padding: "10px 4px",
-          }}
-        >
-          {moodText || "此刻，想说点什么…（点击输入）"}
-        </button>
-
-        {/* Wide pill button — tap to confirm */}
+        {/* Primary CTA — enter the describe-your-mood flow */}
         <motion.button
           onClick={() => {
             if (navigator.vibrate) navigator.vibrate([20, 30, 40]);
             const emotion = emotions[currentIndex];
-            navigate(emotion.route, {
-              state: { colorId: emotion.colorId, moodText: moodText.trim() || undefined },
-            });
+            navigate("/mood", { state: { colorId: emotion.colorId } });
           }}
           className="relative w-full max-w-xs h-14 rounded-full backdrop-blur-xl flex items-center justify-center gap-3 overflow-hidden"
           style={{
@@ -533,12 +511,13 @@ export default function EmotionSlider() {
             我的旅程
           </button>
           <span className="text-white/20">·</span>
-          <div
-            className="font-serif-cn text-[11px] tracking-[0.3em]"
+          <button
+            onClick={() => setShowLoginSheet(true)}
+            className="font-serif-cn text-[11px] tracking-[0.3em] transition-opacity hover:opacity-100"
             style={{ color: "rgba(255,255,255,0.5)", fontWeight: 400, opacity: 0.7 }}
           >
             登录 / 注册
-          </div>
+          </button>
         </div>
       </motion.div>
 
@@ -588,19 +567,21 @@ export default function EmotionSlider() {
         </>
       )}
 
-      {/* Mood sheet — tap-to-type modal */}
+      {/* Login / register sheet — front-end stub (no backend yet).
+          "登录" and the social/guest options all simply enter the mood-describe
+          flow; wire to a real auth API when the backend exists. */}
       <AnimatePresence>
-        {showMoodSheet && (
+        {showLoginSheet && (
           <>
             <motion.div
               className="absolute inset-0 z-40 bg-black/65 backdrop-blur-sm"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowMoodSheet(false)}
+              onClick={() => setShowLoginSheet(false)}
             />
             <motion.div
-              className="absolute left-0 right-0 bottom-0 z-50 rounded-t-3xl border-t backdrop-blur-2xl px-5 pt-3 pb-7"
+              className="absolute left-0 right-0 bottom-0 z-50 rounded-t-3xl border-t backdrop-blur-2xl px-5 pt-3 pb-8"
               style={{
                 borderColor: `${currentEmotion.logoGradient[0]}55`,
                 backgroundColor: "rgba(18,18,20,0.94)",
@@ -613,77 +594,111 @@ export default function EmotionSlider() {
             >
               <div className="w-10 h-1 mx-auto rounded-full bg-white/20 mb-4" />
 
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between mb-5">
                 <div>
                   <div
                     className="font-serif-cn text-[10px] tracking-[0.4em]"
                     style={{ color: `${currentEmotion.logoGradient[0]}aa`, fontWeight: 500 }}
                   >
-                    MOOD
+                    WELCOME
                   </div>
                   <div
                     className="font-serif-cn text-[15px] tracking-[0.3em] text-white/95 mt-0.5"
                     style={{ fontWeight: 500 }}
                   >
-                    此刻，想说点什么
+                    登录 AuraRide
                   </div>
                 </div>
                 <button
-                  onClick={() => setShowMoodSheet(false)}
+                  onClick={() => setShowLoginSheet(false)}
                   className="text-white/55 active:scale-95 transition-transform"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              <textarea
-                value={moodDraft}
-                onChange={(e) => setMoodDraft(e.target.value)}
-                placeholder="像写给自己的一行便签…"
-                maxLength={80}
-                rows={4}
-                autoFocus
-                className="w-full bg-white/5 border rounded-xl px-3 py-2.5 font-serif-cn outline-none resize-none mb-2"
+              {/* Phone number */}
+              <input
+                type="tel"
+                inputMode="numeric"
+                placeholder="手机号"
+                className="w-full bg-white/5 border rounded-xl px-4 py-3 font-serif-cn outline-none mb-3"
                 style={{
                   borderColor: `${currentEmotion.logoGradient[0]}33`,
                   color: "rgba(255,255,255,0.95)",
                   fontSize: 14,
                   letterSpacing: "0.1em",
-                  lineHeight: 1.6,
                 }}
               />
-              <div
-                className="text-right font-serif-cn text-[10px] tracking-[0.25em] text-white/40 mb-4"
-                style={{ fontWeight: 400 }}
-              >
-                {moodDraft.length}/80
+
+              {/* Verification code + send button */}
+              <div className="flex gap-3 mb-5">
+                <input
+                  inputMode="numeric"
+                  placeholder="验证码"
+                  className="flex-1 bg-white/5 border rounded-xl px-4 py-3 font-serif-cn outline-none"
+                  style={{
+                    borderColor: `${currentEmotion.logoGradient[0]}33`,
+                    color: "rgba(255,255,255,0.95)",
+                    fontSize: 14,
+                    letterSpacing: "0.1em",
+                  }}
+                />
+                <button
+                  className="px-4 rounded-xl border font-serif-cn text-[12px] tracking-[0.2em] text-white/80 active:scale-[0.98] transition-transform"
+                  style={{ borderColor: `${currentEmotion.logoGradient[0]}55` }}
+                >
+                  获取验证码
+                </button>
               </div>
 
+              {/* Primary login (stub → enter flow) */}
+              <button
+                onClick={() => {
+                  setShowLoginSheet(false);
+                  navigate("/mood", { state: { colorId: currentEmotion.colorId } });
+                }}
+                className="w-full h-12 rounded-full font-serif-cn text-[13px] tracking-[0.35em] active:scale-[0.98] transition-transform mb-4"
+                style={{
+                  backgroundColor: currentEmotion.logoGradient[0],
+                  color: "#0a0a0a",
+                  boxShadow: `0 0 24px ${currentEmotion.logoGradient[0]}66`,
+                  fontWeight: 600,
+                }}
+              >
+                登录 / 注册
+              </button>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="font-serif-cn text-[10px] tracking-[0.3em] text-white/35">
+                  或
+                </span>
+                <div className="flex-1 h-px bg-white/10" />
+              </div>
+
+              {/* Alternative entries */}
               <div className="flex gap-3">
                 <button
                   onClick={() => {
-                    setMoodText("");
-                    setShowMoodSheet(false);
+                    setShowLoginSheet(false);
+                    navigate("/mood", { state: { colorId: currentEmotion.colorId } });
                   }}
-                  className="flex-1 h-12 rounded-full border font-serif-cn text-[12px] tracking-[0.3em] text-white/70 active:scale-[0.98] transition-transform"
+                  className="flex-1 h-11 rounded-full border font-serif-cn text-[12px] tracking-[0.25em] text-white/75 active:scale-[0.98] transition-transform"
                   style={{ borderColor: "rgba(255,255,255,0.18)", fontWeight: 500 }}
                 >
-                  清空
+                  微信登录
                 </button>
                 <button
                   onClick={() => {
-                    setMoodText(moodDraft.trim());
-                    setShowMoodSheet(false);
+                    setShowLoginSheet(false);
+                    navigate("/mood", { state: { colorId: currentEmotion.colorId } });
                   }}
-                  className="flex-[2] h-12 rounded-full font-serif-cn text-[13px] tracking-[0.35em] active:scale-[0.98] transition-transform"
-                  style={{
-                    backgroundColor: currentEmotion.logoGradient[0],
-                    color: "#0a0a0a",
-                    boxShadow: `0 0 24px ${currentEmotion.logoGradient[0]}66`,
-                    fontWeight: 600,
-                  }}
+                  className="flex-1 h-11 rounded-full border font-serif-cn text-[12px] tracking-[0.25em] text-white/75 active:scale-[0.98] transition-transform"
+                  style={{ borderColor: "rgba(255,255,255,0.18)", fontWeight: 500 }}
                 >
-                  存为此刻
+                  游客先逛逛
                 </button>
               </div>
             </motion.div>
