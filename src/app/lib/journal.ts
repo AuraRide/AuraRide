@@ -33,6 +33,25 @@ export function loadRides(): RideRecord[] {
   }
 }
 
+// Replace the whole ride list (used by demo seeding).
+export function replaceAllRides(rides: RideRecord[]) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(rides));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+// Remove a single ride by id.
+export function deleteRide(id: string) {
+  const rides = loadRides().filter((r) => r.id !== id);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(rides));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function saveRide(ride: RideRecord) {
   const rides = loadRides();
   rides.unshift(ride);

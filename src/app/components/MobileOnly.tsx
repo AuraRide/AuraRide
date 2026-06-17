@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
 
+// AuraRide is a mobile-first app. On a real phone (or a narrow / device-emulated
+// viewport) it renders full-bleed. On a wide desktop screen, instead of blocking,
+// we render the app inside a centered phone frame so it can still be previewed and
+// reviewed from a normal browser window.
+
 export default function MobileOnly({ children }: { children: React.ReactNode }) {
   const [isMobile, setIsMobile] = useState(true);
 
@@ -17,19 +22,27 @@ export default function MobileOnly({ children }: { children: React.ReactNode }) 
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+  // Desktop / wide viewport → show the app inside a phone frame.
   if (!isMobile) {
     return (
-      <div className="size-full bg-black text-white flex items-center justify-center p-8">
-        <div className="max-w-md text-center space-y-6">
-          <div className="text-6xl font-thin tracking-tighter text-white/80">
-            AuraRide
-          </div>
-          <div className="text-sm font-extralight tracking-wide text-white/50 leading-relaxed">
-            此应用仅支持移动设备访问
-          </div>
-          <div className="text-xs font-light tracking-wider text-white/30 mt-8">
-            请在 iPhone 或 Apple Watch 上打开此应用
-          </div>
+      <div className="size-full bg-neutral-900 flex flex-col items-center justify-center gap-4 p-6 overflow-auto">
+        <div className="text-xs font-light tracking-[0.3em] text-white/40">
+          AURARIDE · 移动端预览
+        </div>
+        <div
+          className="relative shrink-0 overflow-hidden bg-black"
+          style={{
+            width: 390,
+            height: 844,
+            borderRadius: 46,
+            border: "10px solid #1c1c1f",
+            boxShadow: "0 30px 80px rgba(0,0,0,0.6)",
+          }}
+        >
+          {children}
+        </div>
+        <div className="text-[11px] font-light tracking-wide text-white/30">
+          真机或窄窗口下为全屏显示
         </div>
       </div>
     );

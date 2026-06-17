@@ -7,11 +7,28 @@ import {
   classifyColor,
   emotionMeta,
   sampleDominantColor,
-  saveRide,
 } from "../lib/journal";
+import { repo } from "../lib/rideRepo";
+import {
+  PIXEL_FONT,
+  PIXEL_OUT,
+  PAPER,
+  INK,
+  INK_SOFT,
+  INK_FAINT,
+  STAIR,
+  TOP_STAIR,
+  CTA_COLORS,
+  emotionToCtaColor,
+  PixelButton,
+  PixelField,
+} from "../components/pixelKit";
 import WeatherEffects from "../components/WeatherEffects";
 import CheckpointMarker from "../components/CheckpointMarker";
 import { getCheckpointMessage } from "../data/checkpointMessages";
+import { useGeolocation } from "../lib/useGeolocation";
+import RideMap from "../components/RideMap";
+import { type LatLng } from "../lib/gcj02";
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import mapBgGreen from "../../imports/image.png";
 import mapBgGray from "../../imports/image-4.png";
@@ -129,6 +146,7 @@ export default function EnhancedRidingHUD() {
   const moodText: string | undefined = location.state?.moodText;
   const themeColor = routeColors[colorId];
   const label = emotionLabel[colorId] || emotionLabel["tired-gray"];
+  const accent = CTA_COLORS[emotionToCtaColor(colorId)];
 
   const startedAtRef = useRef<number>(Date.now());
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -144,7 +162,6 @@ export default function EnhancedRidingHUD() {
   const [duration, setDuration] = useState(0);
   const [heartRate, setHeartRate] = useState(85);
   const [isPaused, setIsPaused] = useState(false);
-  const [terrain, setTerrain] = useState<"asphalt" | "gravel" | "cobblestone">("asphalt");
   const [weather, setWeather] = useState<"clear" | "rain" | "wind" | "cloudy" | "sunset">("clear");
   const [windDirection, setWindDirection] = useState<"head" | "tail">("tail");
   const [reachedCheckpoints, setReachedCheckpoints] = useState<number[]>([]);
@@ -152,6 +169,40 @@ export default function EnhancedRidingHUD() {
   const [checkpointMessages, setCheckpointMessages] = useState<
     Array<{ message: string; subtitle: string }>
   >([]);
+
+  // Real satellite positioning — drives speed & distance on a phone. Falls back
+  // to a gentle simulation when there is no fix (desktop preview / denied perms).
+  const gps = useGeolocation({ paused: isPaused });
+  const usingGps = gps.status === "tracking";
+
+  // The ride's path, oldest → newest (raw WGS-84). Drawn by RideMap.
+  const [track, setTrack] = useState<LatLng[]>([]);
+
+  // Refs let the distance-watcher effect read fresh speed / heart-rate without
+  // re-subscribing every tick.
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
+  const heartRateRef = useRef(heartRate);
+  heartRateRef.current = heartRate;
+  // Dedup key for real GPS points + a wandering synthetic position used when
+  // there is no fix, so the trace still draws in preview / on GPS-less devices.
+  const lastAppendedRef = useRef<string>("");
+  const synthRef = useRef({ lat: 31.24, lng: 121.49, heading: Math.PI / 4 });
+
+  const pushPoint = (lat: number, lng: number) =>
+    setTrack((t) => {
+      const next = [...t, { lat, lng }];
+      return next.length > 600 ? next.slice(next.length - 600) : next;
+    });
+
+  // Append real GPS fixes to the track.
+  useEffect(() => {
+    if (gps.status !== "tracking" || gps.lat == null || gps.lng == null) return;
+    const key = `${gps.lat.toFixed(6)},${gps.lng.toFixed(6)}`;
+    if (key === lastAppendedRef.current) return;
+    lastAppendedRef.current = key;
+    pushPoint(gps.lat, gps.lng);
+  }, [gps.lat, gps.lng, gps.status]);
 
   // Initialize checkpoint messages on mount
   useEffect(() => {
@@ -166,102 +217,87 @@ export default function EnhancedRidingHUD() {
     setCheckpointMessages(messages);
   }, []);
 
+  // Real elapsed riding time (seconds), paused-aware.
   useEffect(() => {
     if (isPaused) return;
-
-    const interval = setInterval(() => {
-      let currentSpeed = 0;
-      let currentHeartRate = 0;
-
-      setSpeed((prev) => {
-        const newSpeed = Math.max(0, prev + (Math.random() - 0.5) * 4);
-        currentSpeed = Math.min(35, newSpeed);
-        return currentSpeed;
-      });
-
-      setHeartRate((prev) => {
-        const change = Math.random() - 0.5;
-        currentHeartRate = Math.max(60, Math.min(180, prev + change * 3));
-        return currentHeartRate;
-      });
-
-      setDistance((prev) => {
-        const newDistance = prev + 0.15;
-
-        // Check checkpoints
-        checkpointsBase.forEach((checkpoint, index) => {
-          const distanceToCheckpoint = Math.abs(newDistance - checkpoint.distance);
-
-          setReachedCheckpoints((prevReached) => {
-            if (distanceToCheckpoint < 0.4 && !prevReached.includes(index)) {
-              setNearbyCheckpoint(index);
-            }
-
-            if (distanceToCheckpoint < 0.2 && !prevReached.includes(index)) {
-              setNearbyCheckpoint(null);
-
-              // Update message with current context
-              const context = {
-                ...checkpoint.context,
-                isClimbing: currentHeartRate > 140,
-                isHighSpeed: currentSpeed > 25,
-              };
-              const newMessage = getCheckpointMessage(context);
-              setCheckpointMessages((prevMessages) => {
-                const updated = [...prevMessages];
-                updated[index] = newMessage;
-                return updated;
-              });
-
-              // Haptic feedback
-              if (navigator.vibrate) {
-                navigator.vibrate([30, 20, 30]);
-              }
-
-              // Hide message after 4 seconds
-              setTimeout(() => {
-                setReachedCheckpoints((prev) => prev.filter((i) => i !== index));
-              }, 1500);
-
-              return [...prevReached, index];
-            }
-
-            return prevReached;
-          });
-        });
-
-        // Smart weather system - changes based on distance milestones
-        if (newDistance > 0 && newDistance < 2) {
-          setWeather("clear");
-        } else if (newDistance >= 2 && newDistance < 4) {
-          setWeather("cloudy");
-        } else if (newDistance >= 4 && newDistance < 6) {
-          setWeather("wind");
-          setWindDirection(currentSpeed > 20 ? "tail" : "head");
-        } else if (newDistance >= 6 && newDistance < 8) {
-          setWeather("rain");
-        } else if (newDistance >= 8) {
-          setWeather("sunset");
-        }
-
-        return newDistance;
-      });
-
-      setDuration((prev) => prev + 4);
-
-      // Simulate terrain changes
-      if (Math.random() > 0.98) {
-        const terrains: Array<"asphalt" | "gravel" | "cobblestone"> = [
-          "asphalt",
-          "gravel",
-          "cobblestone",
-        ];
-        setTerrain(terrains[Math.floor(Math.random() * terrains.length)]);
-      }
-    }, 250);
-
-    return () => clearInterval(interval);
+    const id = setInterval(() => setDuration((d) => d + 1), 1000);
+    return () => clearInterval(id);
   }, [isPaused]);
+
+  // Heart rate has no sensor in the browser — keep a gentle simulated trace
+  // until a wearable / HealthKit integration replaces it.
+  useEffect(() => {
+    if (isPaused) return;
+    const id = setInterval(() => {
+      setHeartRate((p) => Math.max(60, Math.min(180, p + (Math.random() - 0.5) * 4)));
+    }, 1500);
+    return () => clearInterval(id);
+  }, [isPaused]);
+
+  // GPS is the source of truth for speed & distance whenever we have a fix.
+  useEffect(() => {
+    if (gps.status !== "tracking") return;
+    setSpeed(isPaused ? 0 : gps.speedKmh);
+    setDistance(gps.distanceKm);
+  }, [gps.status, gps.speedKmh, gps.distanceKm, isPaused]);
+
+  // Fallback motion when there's no GPS fix (desktop preview / denied / locating)
+  // so the HUD still feels alive. GPS takes over the moment a fix arrives.
+  useEffect(() => {
+    if (isPaused || gps.status === "tracking") return;
+    const id = setInterval(() => {
+      setSpeed((prev) => Math.min(35, Math.max(0, prev + (Math.random() - 0.5) * 4)));
+      setDistance((prev) => prev + 0.05);
+      // Wander a synthetic position so the trace canvas has a path to draw.
+      const s = synthRef.current;
+      s.heading += (Math.random() - 0.5) * 0.6;
+      const step = 0.00012; // ~13m per tick
+      s.lat += Math.sin(s.heading) * step * 0.6;
+      s.lng += Math.cos(s.heading) * step;
+      pushPoint(s.lat, s.lng);
+    }, 250);
+    return () => clearInterval(id);
+  }, [isPaused, gps.status]);
+
+  // Weather + checkpoint reactions, driven by distance regardless of its source.
+  useEffect(() => {
+    if (distance > 0 && distance < 2) setWeather("clear");
+    else if (distance >= 2 && distance < 4) setWeather("cloudy");
+    else if (distance >= 4 && distance < 6) {
+      setWeather("wind");
+      setWindDirection(speedRef.current > 20 ? "tail" : "head");
+    } else if (distance >= 6 && distance < 8) setWeather("rain");
+    else if (distance >= 8) setWeather("sunset");
+
+    checkpointsBase.forEach((checkpoint, index) => {
+      const gap = Math.abs(distance - checkpoint.distance);
+      setReachedCheckpoints((prevReached) => {
+        if (gap < 0.4 && !prevReached.includes(index)) {
+          setNearbyCheckpoint(index);
+        }
+        if (gap < 0.2 && !prevReached.includes(index)) {
+          setNearbyCheckpoint(null);
+          const context = {
+            ...checkpoint.context,
+            isClimbing: heartRateRef.current > 140,
+            isHighSpeed: speedRef.current > 25,
+          };
+          const newMessage = getCheckpointMessage(context);
+          setCheckpointMessages((prevMessages) => {
+            const updated = [...prevMessages];
+            updated[index] = newMessage;
+            return updated;
+          });
+          if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+          setTimeout(() => {
+            setReachedCheckpoints((prev) => prev.filter((i) => i !== index));
+          }, 1500);
+          return [...prevReached, index];
+        }
+        return prevReached;
+      });
+    });
+  }, [distance]);
 
   const openPhotoSheet = () => {
     setDraftDataUrl(null);
@@ -319,7 +355,7 @@ export default function EnhancedRidingHUD() {
         .join("")}`;
     }
     const judgedColorId = photos.length > 0 ? classifyColor(dominant) : colorId;
-    saveRide({
+    repo.saveRide({
       id: `${startedAtRef.current}`,
       colorId: judgedColorId,
       startedAt: startedAtRef.current,
@@ -330,7 +366,7 @@ export default function EnhancedRidingHUD() {
       photos,
       dominantColor: dominant,
     });
-    navigate("/review", { state: { colorId: judgedColorId, distance, duration, moodText } });
+    navigate("/review", { state: { colorId: judgedColorId, distance, duration, moodText, rideId: `${startedAtRef.current}` } });
   };
 
   const routeProgress = Math.min(distance / 10.3, 1);
@@ -357,14 +393,10 @@ export default function EnhancedRidingHUD() {
         </motion.div>
       </AnimatePresence>
 
-      {/* Aerial Map Background (reused from RouteGeneration) */}
+      {/* Live map + GPS trace (real 高德 map when VITE_AMAP_KEY is set, else a
+          trace canvas drawing the actual path shape). */}
       <div className="absolute inset-0">
-        <ImageWithFallback
-          src={mapBgByColor[colorId] || mapBgGreen}
-          alt="情绪地图"
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{ filter: "brightness(0.6) saturate(1.05)" }}
-        />
+        <RideMap track={track} themeColor={themeColor} />
         {/* Vignette to keep HUD readable */}
         <div
           className="absolute inset-0 pointer-events-none"
@@ -374,7 +406,9 @@ export default function EnhancedRidingHUD() {
           }}
         />
 
-        {/* Glowing waypoint route + traveled progress */}
+        {/* Live GPS trace is now drawn by RideMap above; the synthetic
+            planned-route overlay is kept here but disabled. */}
+        {false && (
         <svg
           className="absolute inset-0 w-full h-full"
           viewBox="0 0 360 780"
@@ -506,6 +540,7 @@ export default function EnhancedRidingHUD() {
             );
           })()}
         </svg>
+        )}
       </div>
 
       {/* deprecated: original synthetic city map */}
@@ -715,198 +750,122 @@ export default function EnhancedRidingHUD() {
       {/* HUD Overlay */}
       <div className="relative z-20 h-full flex flex-col px-5 pt-4 pb-6">
         {/* Top Stats */}
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] tracking-[0.2em] text-white/70 font-light tabular-nums">
+        <div className="flex items-center justify-between" style={{ fontFamily: PIXEL_FONT }}>
+          <span style={{ fontSize: 11, letterSpacing: 1, color: "rgba(255,255,255,0.82)", fontWeight: 700 }}>
             {distance.toFixed(1)} / 10.3 km
           </span>
-          <span className="text-[11px] tracking-[0.25em] font-light text-white/70 tabular-nums">
-            {Math.floor(duration / 60).toString().padStart(2, "0")}
-            :{(duration % 60).toString().padStart(2, "0")}
+
+          {/* Satellite positioning status */}
+          <span className="flex items-center" style={{ gap: 6, fontSize: 10, letterSpacing: 1, fontWeight: 600, color: usingGps ? "#5bf0b0" : "rgba(255,255,255,0.55)" }}>
+            <motion.span
+              style={{ width: 6, height: 6, background: usingGps ? "#5bf0b0" : "rgba(255,255,255,0.5)", clipPath: STAIR }}
+              animate={gps.status === "locating" ? { opacity: [0.3, 1, 0.3] } : { opacity: 1 }}
+              transition={gps.status === "locating" ? { duration: 1, repeat: Infinity } : {}}
+            />
+            {gps.status === "tracking" && `GPS · 精度 ${gps.accuracy != null ? Math.round(gps.accuracy) : "--"}m`}
+            {gps.status === "locating" && "定位中…"}
+            {gps.status === "denied" && "定位被拒 · 模拟"}
+            {gps.status === "unavailable" && "无定位 · 模拟"}
+            {gps.status === "idle" && "准备定位"}
+          </span>
+
+          <span style={{ fontSize: 11, letterSpacing: 1, color: "rgba(255,255,255,0.82)", fontWeight: 700 }}>
+            {Math.floor(duration / 60).toString().padStart(2, "0")}:{(duration % 60).toString().padStart(2, "0")}
           </span>
         </div>
 
-        {/* Pill row: emotion · state · weather */}
-        <div className="flex items-center gap-2 mt-3">
-          <div
-            className="backdrop-blur-xl rounded-full px-3 py-1.5 flex items-center gap-1.5 border"
-            style={{ borderColor: `${themeColor}55`, backgroundColor: "rgba(255,255,255,0.05)" }}
-          >
-            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: themeColor, boxShadow: `0 0 6px ${themeColor}` }} />
-            <span className="text-[10px] tracking-[0.2em]" style={{ color: `${themeColor}ee`, fontWeight: 500 }}>
-              {label.cn} / {label.en}
+        {/* Pill row: emotion · state · weather — cream pixel chips */}
+        <div className="flex items-center" style={{ gap: 8, marginTop: 12, fontFamily: PIXEL_FONT }}>
+          <div className="flex items-center" style={{ gap: 7, background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, padding: "6px 11px" }}>
+            <span style={{ width: 9, height: 9, background: accent.fill, clipPath: STAIR }} />
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: accent.ink }}>{label.cn} / {label.en}</span>
+          </div>
+          <div style={{ background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, padding: "6px 11px" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: INK }}>
+              {speed > 25 ? "冲刺" : heartRate > 140 ? "爬坡" : "巡航"}
             </span>
           </div>
-          <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-full px-3 py-1.5">
-            <motion.span
-              className="font-serif-cn text-[10px] tracking-[0.25em] text-white/75"
-              key={`state-${speed > 25 ? "sprint" : heartRate > 140 ? "climb" : "cruise"}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-              style={{ fontWeight: 500 }}
-            >
-              {speed > 25 ? "冲刺" : heartRate > 140 ? "爬坡" : "巡航"}
-            </motion.span>
-          </div>
-          <div
-            className="backdrop-blur-xl rounded-full px-3 py-1.5 flex items-center gap-1.5 border"
-            style={{
-              borderColor: weather === "wind" ? `${themeColor}77` : "rgba(255,255,255,0.1)",
-              backgroundColor: weather === "wind" ? `${themeColor}18` : "rgba(255,255,255,0.05)",
-              boxShadow: weather === "wind" ? `0 0 14px ${themeColor}44` : "none",
-            }}
-          >
-            <span className="text-[11px]">
+          <div className="flex items-center" style={{ gap: 6, background: weather === "wind" ? accent.tint : PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + (weather === "wind" ? accent.fill : PIXEL_OUT), padding: "6px 11px" }}>
+            <span style={{ fontSize: 12 }}>
               {weather === "clear" && "☀"}
               {weather === "cloudy" && "☁"}
               {weather === "wind" && (windDirection === "tail" ? "↗" : "↙")}
               {weather === "rain" && "☂"}
               {weather === "sunset" && "☼"}
             </span>
-            <motion.span
-              key={`weather-${weather}-${windDirection}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-              className="font-serif-cn text-[10px] tracking-[0.25em] text-white/85"
-              style={{ fontWeight: 500 }}
-            >
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: weather === "wind" ? accent.ink : INK }}>
               {weather === "clear" && "晴朗"}
               {weather === "cloudy" && "阴天"}
               {weather === "wind" && (windDirection === "tail" ? "顺风" : "逆风")}
               {weather === "rain" && "小雨"}
               {weather === "sunset" && "日落"}
-            </motion.span>
+            </span>
           </div>
         </div>
 
         {/* Center Speed Display */}
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center" style={{ fontFamily: PIXEL_FONT }}>
           <div className="text-center">
             {/* Distance Progress Arc (semicircle) */}
             <div className="relative w-[260px] h-[80px] mx-auto mb-2">
-              <svg
-                className="absolute inset-0 w-full h-full overflow-visible"
-                viewBox="0 0 260 80"
-              >
-                {/* Track */}
-                <path
-                  d="M 20 70 A 110 110 0 0 1 240 70"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.12)"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-                {/* Progress */}
+              <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 260 80">
+                <path d="M 20 70 A 110 110 0 0 1 240 70" fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="2" strokeLinecap="butt" />
                 <path
                   d="M 20 70 A 110 110 0 0 1 240 70"
                   fill="none"
                   stroke={themeColor}
-                  strokeWidth="2"
-                  strokeLinecap="round"
+                  strokeWidth="4"
+                  strokeLinecap="butt"
                   pathLength={1}
-                  style={{
-                    strokeDasharray: 1,
-                    strokeDashoffset: 1 - routeProgress,
-                    filter: `drop-shadow(0 0 6px ${themeColor})`,
-                    transition: "stroke-dashoffset 0.4s ease-out",
-                  }}
+                  style={{ strokeDasharray: 1, strokeDashoffset: 1 - routeProgress, filter: `drop-shadow(0 0 6px ${themeColor})`, transition: "stroke-dashoffset 0.4s ease-out" }}
                 />
-                {/* Leading dot */}
                 {(() => {
-                  const angle = Math.PI * (1 - routeProgress); // 180° → 0°
+                  const angle = Math.PI * (1 - routeProgress);
                   const cx = 130 + 110 * Math.cos(angle);
                   const cy = 70 - 110 * Math.sin(angle);
-                  return (
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r="3.5"
-                      fill="#ffffff"
-                      style={{ filter: `drop-shadow(0 0 8px ${themeColor})` }}
-                    />
-                  );
+                  return <rect x={cx - 4} y={cy - 4} width="8" height="8" fill="#ffffff" style={{ filter: `drop-shadow(0 0 8px ${themeColor})` }} />;
                 })()}
               </svg>
-              {/* Label inside arc */}
               <div className="absolute inset-x-0 bottom-1 text-center">
-                <div
-                  className="font-serif-cn text-[11px] tracking-[0.4em]"
-                  style={{ color: `${themeColor}cc`, fontWeight: 500 }}
-                >
-                  正在骑行
-                </div>
-                <div className="text-[9px] tracking-[0.25em] text-white/40 tabular-nums mt-0.5">
-                  {Math.round(routeProgress * 100)}%
-                </div>
+                <div style={{ fontSize: 11, letterSpacing: 4, fontWeight: 700, color: themeColor }}>正在骑行</div>
+                <div style={{ fontSize: 10, letterSpacing: 2, color: "rgba(255,255,255,0.5)", fontWeight: 700, marginTop: 2 }}>{Math.round(routeProgress * 100)}%</div>
               </div>
             </div>
 
-            <motion.div
-              animate={{ scale: [1, 1.01, 1] }}
-              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-            >
-              <div className="text-[92px] font-extralight leading-none tabular-nums tracking-tight">
-                {speed.toFixed(1)}
-              </div>
-              <div
-                className="text-[11px] tracking-[0.45em] mt-1 font-light"
-                style={{ color: `${themeColor}cc` }}
-              >
-                km/h
-              </div>
+            <motion.div animate={{ scale: [1, 1.01, 1] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
+              <div style={{ fontSize: 92, fontWeight: 800, lineHeight: 1, letterSpacing: -2, color: "#fff", textShadow: `0 0 30px ${themeColor}66` }}>{speed.toFixed(1)}</div>
+              <div style={{ fontSize: 12, letterSpacing: 5, marginTop: 2, fontWeight: 700, color: themeColor }}>km/h</div>
             </motion.div>
 
-            {/* Subtitle line */}
-            <div
-              className="font-serif-cn text-[11px] tracking-[0.25em] text-white/55 mt-4"
-              style={{ fontWeight: 400 }}
-            >
-              {label.subtitle}
-            </div>
+            <div style={{ fontSize: 12, letterSpacing: 2, color: "rgba(255,255,255,0.62)", marginTop: 16, fontWeight: 600 }}>{label.subtitle}</div>
           </div>
         </div>
 
-        {/* Stats glass card */}
+        {/* Stats — cream pixel panel */}
         <div
-          className="backdrop-blur-xl rounded-2xl border grid grid-cols-3 mb-4"
-          style={{
-            borderColor: "rgba(255,255,255,0.12)",
-            backgroundColor: "rgba(20,20,22,0.55)",
-          }}
+          className="grid grid-cols-3 mb-4"
+          style={{ background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, fontFamily: PIXEL_FONT }}
         >
-          <div className="text-center py-3 border-r border-white/10">
-            <div className="text-[22px] font-light tabular-nums leading-none" style={{ color: "#ffffff" }}>
-              {distance.toFixed(2)}
-            </div>
-            <div className="font-serif-cn text-[10px] tracking-[0.3em] text-white/55 mt-1.5" style={{ fontWeight: 500 }}>
-              距离
-            </div>
+          <div style={{ textAlign: "center", padding: "12px 0", boxShadow: "inset -1px 0 0 0 rgba(58,40,23,0.18)" }}>
+            <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1, color: INK }}>{distance.toFixed(2)}</div>
+            <div style={{ fontSize: 10, letterSpacing: 3, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>距离</div>
           </div>
-          <div className="text-center py-3 border-r border-white/10">
-            <div className="text-[22px] font-light tabular-nums leading-none" style={{ color: "#ffffff" }}>
+          <div style={{ textAlign: "center", padding: "12px 0", boxShadow: "inset -1px 0 0 0 rgba(58,40,23,0.18)" }}>
+            <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1, color: INK }}>
               {(distance > 0 ? (duration / 60 / distance) * 60 : 0).toFixed(1)}
             </div>
-            <div className="font-serif-cn text-[10px] tracking-[0.3em] text-white/55 mt-1.5" style={{ fontWeight: 500 }}>
-              配速 km/h
-            </div>
+            <div style={{ fontSize: 10, letterSpacing: 3, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>配速 km/h</div>
           </div>
-          <div className="text-center py-3">
-            <div
-              className="text-[22px] font-light tabular-nums leading-none flex items-center justify-center gap-1.5"
-              style={{ color: heartRate > 140 ? "#F43F5E" : "#ffffff" }}
-            >
+          <div style={{ textAlign: "center", padding: "12px 0" }}>
+            <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1, color: heartRate > 140 ? "#d23b2c" : INK, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               <motion.div
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: heartRate > 140 ? "#F43F5E" : themeColor }}
+                style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: heartRate > 140 ? "#d23b2c" : accent.fill }}
                 animate={{ opacity: [0.3, 1, 0.3] }}
                 transition={{ duration: 0.8, repeat: Infinity }}
               />
               {Math.round(heartRate)}
             </div>
-            <div className="font-serif-cn text-[10px] tracking-[0.3em] text-white/55 mt-1.5" style={{ fontWeight: 500 }}>
-              心率 cpm
-            </div>
+            <div style={{ fontSize: 10, letterSpacing: 3, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>心率 cpm</div>
           </div>
         </div>
 
@@ -928,180 +887,90 @@ export default function EnhancedRidingHUD() {
           </div>
         )}
 
-        {/* Bottom Controls */}
+        {/* Bottom Controls — pixel buttons */}
         <div className="flex gap-3 items-center">
-          <button
-            onClick={openPhotoSheet}
-            className="px-4 py-3.5 rounded-full backdrop-blur-xl border transition-all active:scale-95 flex items-center gap-2"
-            style={{
-              borderColor: `${themeColor}77`,
-              backgroundColor: `${themeColor}1a`,
-              color: "rgba(255,255,255,0.9)",
-              boxShadow: `0 0 14px ${themeColor}44`,
-            }}
-            aria-label="拍照"
-          >
-            <Camera size={14} />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={handlePhotoPick}
-            className="hidden"
-          />
-          <button
-            onClick={() => setIsPaused(!isPaused)}
-            className="px-6 py-3.5 rounded-full backdrop-blur-xl border transition-all active:scale-95 flex items-center gap-2"
-            style={{
-              borderColor: "rgba(255,255,255,0.18)",
-              backgroundColor: "rgba(255,255,255,0.05)",
-              color: "rgba(255,255,255,0.85)",
-            }}
-          >
+          <PixelButton onClick={openPhotoSheet} fill={accent.fill} text={accent.text} height={50} style={{ width: 58 }}>
+            <Camera size={16} />
+          </PixelButton>
+          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoPick} className="hidden" />
+          <PixelButton onClick={() => setIsPaused(!isPaused)} fill="#f6efdf" text={INK} height={50} fontSize={14} fontWeight={700} letter={2} style={{ width: 104 }}>
             <Pause size={14} />
-            <span className="font-serif-cn text-[12px] tracking-[0.3em]" style={{ fontWeight: 500 }}>
-              {isPaused ? "继续" : "暂停"}
-            </span>
-          </button>
-          <button
-            onClick={handleEnd}
-            className="flex-1 py-3.5 rounded-full transition-all active:scale-95 flex items-center justify-center gap-2"
-            style={{
-              backgroundColor: "#ffffff",
-              color: "#0a0a0a",
-              boxShadow: `0 0 28px ${themeColor}55`,
-            }}
-          >
+            {isPaused ? "继续" : "暂停"}
+          </PixelButton>
+          <PixelButton onClick={handleEnd} flex={1} fill={accent.fill} text={accent.text} height={50} fontSize={15} fontWeight={800} letter={4}>
             <Square size={12} />
-            <span className="font-serif-cn text-[13px] tracking-[0.35em]" style={{ fontWeight: 600 }}>
-              结束骑行
-            </span>
-          </button>
+            结束骑行
+          </PixelButton>
         </div>
       </div>
 
-      {/* Photo Sheet — modal for picking + captioning a ride photo */}
-      <AnimatePresence>
-        {showSheet && (
-          <>
-            <motion.div
-              className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowSheet(false)}
-            />
-            <motion.div
-              className="absolute left-0 right-0 bottom-0 z-50 rounded-t-3xl border-t backdrop-blur-2xl px-5 pt-3 pb-7"
-              style={{
-                borderColor: `${themeColor}55`,
-                backgroundColor: "rgba(18,18,20,0.92)",
-                boxShadow: `0 -20px 60px ${themeColor}44`,
-              }}
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 28, stiffness: 280 }}
-            >
-              {/* Grabber */}
-              <div className="w-10 h-1 mx-auto rounded-full bg-white/20 mb-4" />
-
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <div className="font-serif-cn text-[10px] tracking-[0.4em] text-white/45" style={{ fontWeight: 500 }}>
-                    MOMENT
-                  </div>
-                  <div className="font-serif-cn text-[15px] tracking-[0.3em] text-white/95 mt-0.5" style={{ fontWeight: 500 }}>
-                    记一刻路上
-                  </div>
-                </div>
-                <button onClick={() => setShowSheet(false)} className="text-white/55 active:scale-95 transition-transform">
-                  <X size={18} />
-                </button>
+      {/* Photo Sheet — pixel paper modal for picking + captioning a ride photo */}
+      {showSheet && (
+        <div className="absolute inset-0 z-40" style={{ fontFamily: PIXEL_FONT }}>
+          <div className="absolute inset-0" style={{ background: "rgba(20,16,8,0.5)" }} onClick={() => setShowSheet(false)} />
+          <div
+            className="pixel-pop"
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: "min(90vw, 400px)",
+              maxHeight: "86%",
+              overflowY: "auto",
+              background: PAPER,
+              clipPath: STAIR,
+              boxShadow: "inset 0 0 0 3px " + PIXEL_OUT,
+              padding: "20px 22px 22px",
+            }}
+          >
+            <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 10, letterSpacing: 5, color: INK_FAINT, fontWeight: 600 }}>MOMENT</div>
+                <div style={{ fontSize: 18, letterSpacing: 2, color: INK, fontWeight: 800, marginTop: 2 }}>记一刻路上</div>
               </div>
+              <button onClick={() => setShowSheet(false)} style={{ background: "none", border: "none", cursor: "pointer", color: INK_SOFT }}>
+                <X size={20} />
+              </button>
+            </div>
 
-              {/* Preview / picker */}
-              {draftDataUrl ? (
-                <div className="relative rounded-2xl overflow-hidden mb-4" style={{ border: `1px solid ${draftColor}aa` }}>
-                  <img src={draftDataUrl} alt="preview" className="w-full h-56 object-cover" />
-                  <div
-                    className="absolute top-2 left-2 backdrop-blur-md rounded-full px-2.5 py-1 flex items-center gap-1.5"
-                    style={{ backgroundColor: "rgba(0,0,0,0.55)", border: `1px solid ${draftColor}aa` }}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: draftColor, boxShadow: `0 0 6px ${draftColor}` }}
-                    />
-                    <span className="font-serif-cn text-[10px] tracking-[0.25em] text-white/90" style={{ fontWeight: 500 }}>
-                      {emotionMeta(classifyColor(draftColor)).cn}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-2 right-2 backdrop-blur-md rounded-full px-3 py-1.5 font-serif-cn text-[10px] tracking-[0.3em] text-white/90 active:scale-95 transition-transform"
-                    style={{ backgroundColor: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.25)", fontWeight: 500 }}
-                  >
-                    换一张
-                  </button>
+            {/* Preview / picker */}
+            {draftDataUrl ? (
+              <div style={{ position: "relative", overflow: "hidden", marginBottom: 16, clipPath: STAIR, boxShadow: "inset 0 0 0 3px " + PIXEL_OUT }}>
+                <img src={draftDataUrl} alt="preview" className="w-full object-cover" style={{ height: 200, display: "block" }} />
+                <div style={{ position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 6, background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, padding: "5px 9px" }}>
+                  <span style={{ width: 9, height: 9, background: draftColor, clipPath: STAIR }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: INK }}>{emotionMeta(classifyColor(draftColor)).cn}</span>
                 </div>
-              ) : (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full h-44 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 mb-4 active:scale-[0.99] transition-transform"
-                  style={{ borderColor: `${themeColor}66`, backgroundColor: `${themeColor}0d` }}
+                  style={{ position: "absolute", bottom: 8, right: 8, background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, padding: "6px 12px", fontFamily: PIXEL_FONT, fontSize: 12, fontWeight: 700, letterSpacing: 2, color: INK, cursor: "pointer", border: "none" }}
                 >
-                  <Camera size={28} style={{ color: themeColor }} />
-                  <span className="font-serif-cn text-[12px] tracking-[0.3em]" style={{ color: `${themeColor}dd`, fontWeight: 500 }}>
-                    拍摄 / 上传照片
-                  </span>
-                  <span className="font-serif-cn text-[10px] tracking-[0.25em] text-white/35" style={{ fontWeight: 400 }}>
-                    系统会从画面里读出此刻的颜色
-                  </span>
+                  换一张
                 </button>
-              )}
-
-              {/* Caption */}
-              <div className="mb-4">
-                <textarea
-                  value={draftCaption}
-                  onChange={(e) => setDraftCaption(e.target.value)}
-                  placeholder="想说点什么…（一句也行）"
-                  maxLength={60}
-                  rows={2}
-                  className="w-full bg-white/5 border rounded-xl px-3 py-2.5 font-serif-cn outline-none resize-none transition-colors"
-                  style={{
-                    borderColor: "rgba(255,255,255,0.12)",
-                    color: "rgba(255,255,255,0.92)",
-                    fontSize: 13,
-                    letterSpacing: "0.1em",
-                  }}
-                />
-                <div className="text-right font-serif-cn text-[9px] tracking-[0.25em] text-white/35 mt-1" style={{ fontWeight: 400 }}>
-                  {draftCaption.length}/60
-                </div>
               </div>
-
-              {/* Confirm */}
+            ) : (
               <button
-                onClick={confirmPhoto}
-                disabled={!draftDataUrl}
-                className="w-full h-12 rounded-full flex items-center justify-center transition-all active:scale-[0.98] disabled:opacity-40"
-                style={{
-                  backgroundColor: draftDataUrl ? "#ffffff" : "rgba(255,255,255,0.1)",
-                  color: draftDataUrl ? "#0a0a0a" : "rgba(255,255,255,0.5)",
-                  boxShadow: draftDataUrl ? `0 0 24px ${draftColor}66` : "none",
-                }}
+                onClick={() => fileInputRef.current?.click()}
+                style={{ width: "100%", height: 168, marginBottom: 16, background: accent.tint, clipPath: STAIR, boxShadow: "inset 0 0 0 3px " + accent.fill, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", border: "none", fontFamily: PIXEL_FONT }}
               >
-                <span className="font-serif-cn text-[13px] tracking-[0.35em]" style={{ fontWeight: 600 }}>
-                  收入旅程
-                </span>
+                <Camera size={28} style={{ color: accent.fill }} />
+                <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 2, color: accent.ink }}>拍摄 / 上传照片</span>
+                <span style={{ fontSize: 11, color: INK_FAINT }}>系统会从画面里读出此刻的颜色</span>
               </button>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+            )}
+
+            {/* Caption */}
+            <div style={{ marginBottom: 16 }}>
+              <PixelField value={draftCaption} onChange={(v) => setDraftCaption(v.slice(0, 60))} placeholder="想说点什么…（一句也行）" accent={accent.fill} multiline />
+              <div style={{ textAlign: "right", fontSize: 10, color: INK_FAINT, marginTop: 4 }}>{draftCaption.length}/60</div>
+            </div>
+
+            <PixelButton onClick={confirmPhoto} disabled={!draftDataUrl} fill={accent.fill} text={accent.text} height={52} fontSize={16} fontWeight={800} letter={4}>
+              收入旅程
+            </PixelButton>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
