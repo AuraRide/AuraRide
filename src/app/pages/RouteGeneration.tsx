@@ -1,7 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { motion, AnimatePresence } from "motion/react";
-import { ChevronLeft, RefreshCw, ArrowRight } from "lucide-react";
+import { motion } from "motion/react";
+import { RefreshCw, ArrowRight } from "lucide-react";
+import {
+  PIXEL_FONT,
+  PIXEL_OUT,
+  PAPER,
+  INK,
+  INK_SOFT,
+  INK_FAINT,
+  STAIR,
+  TOP_STAIR,
+  CTA_COLORS,
+  emotionToCtaColor,
+  PixelButton,
+  PixelBack,
+} from "../components/pixelKit";
 import { AMAP_KEY, loadAMap, loadPlugin } from "../lib/amap";
 import { wgs84ToGcj02 } from "../lib/gcj02";
 import {
@@ -235,10 +249,11 @@ export default function RouteGeneration() {
   };
 
   const planning = status !== "ready";
+  const accent = CTA_COLORS[emotionToCtaColor(colorId)];
 
   return (
-    <div className="size-full overflow-hidden relative bg-[#070810] text-white">
-      {/* Map / backdrop */}
+    <div className="size-full overflow-hidden relative" style={{ fontFamily: PIXEL_FONT, background: "#070810" }}>
+      {/* Live map / grid backdrop (kept — real route planning) */}
       <div className="absolute inset-0">
         {AMAP_KEY ? (
           <div ref={mapElRef} style={{ width: "100%", height: "100%" }} className="bg-black" />
@@ -254,75 +269,66 @@ export default function RouteGeneration() {
             </svg>
           </div>
         )}
-        {/* Vignette */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
             background:
-              "radial-gradient(ellipse 90% 50% at 50% 30%, transparent 30%, rgba(0,0,0,0.5) 100%), linear-gradient(to bottom, rgba(0,0,0,0.4), transparent 25%, transparent 45%, rgba(7,8,16,0.95) 92%)",
+              "radial-gradient(ellipse 90% 50% at 50% 30%, transparent 30%, rgba(0,0,0,0.5) 100%), linear-gradient(to bottom, rgba(0,0,0,0.4), transparent 25%, transparent 45%, rgba(7,8,16,0.6) 92%)",
           }}
         />
       </div>
 
-      {/* Top bar */}
+      {/* Top bar — pixel back + paper title pill */}
       <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-5 pt-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="w-8 h-8 flex items-center justify-center text-white/70 active:scale-90 transition-transform"
-          aria-label="返回"
+        <PixelBack onClick={() => navigate(-1)} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: PAPER,
+            clipPath: STAIR,
+            boxShadow: "inset 0 0 0 2px " + PIXEL_OUT,
+            padding: "7px 14px",
+          }}
         >
-          <ChevronLeft size={20} />
-        </button>
-        <div className="flex items-center gap-2">
-          <span className="w-1 h-1 rounded-full" style={{ backgroundColor: theme.color, boxShadow: `0 0 6px ${theme.color}` }} />
-          <span className="font-serif-cn text-[12px] tracking-[0.35em] text-white/85" style={{ fontWeight: 500 }}>
-            路线推荐
-          </span>
+          <span style={{ width: 9, height: 9, background: accent.fill, clipPath: STAIR }} />
+          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 3, color: INK }}>路线推荐 · {theme.cn}</span>
         </div>
-        <div className="text-[10px] tracking-[0.25em]" style={{ color: `${theme.color}cc`, textShadow: `0 0 10px ${theme.color}66` }}>
-          {theme.cn} / {theme.en}
-        </div>
+        <div style={{ width: 40 }} />
       </div>
 
       {/* Planning overlay */}
-      <AnimatePresence>
-        {planning && (
-          <motion.div
-            className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/40 backdrop-blur-[2px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="w-12 h-12 rounded-full border border-white/15"
-              style={{ borderTopColor: theme.color }}
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1.6, repeat: Infinity, ease: "linear" }}
-            />
-            <div className="font-serif-cn text-[12px] tracking-[0.3em] text-white/70">
-              {status === "locating" ? "正在定位…" : "正在规划周边路线…"}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {planning && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center" style={{ gap: 18, background: "rgba(20,16,8,0.42)" }}>
+          <div className="pixel-spin" style={{ width: 50, height: 50, background: PAPER, clipPath: TOP_STAIR, boxShadow: "inset 0 0 0 3px " + accent.fill }} />
+          <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 3, color: "#fff", textShadow: "0 2px 8px rgba(0,0,0,0.5)" }}>
+            {status === "locating" ? "正在定位…" : "正在规划周边路线…"}
+          </div>
+        </div>
+      )}
 
-      {/* Bottom sheet: slogan + 3 route cards + actions */}
+      {/* Bottom paper panel: slogan + 3 route cards + actions */}
       {status === "ready" && (
         <motion.div
-          className="absolute bottom-0 left-0 right-0 z-20 px-5 pb-7"
-          initial={{ opacity: 0, y: 20 }}
+          className="absolute bottom-0 left-0 right-0 z-20"
+          initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: 0.5 }}
+          style={{
+            background: PAPER,
+            clipPath: TOP_STAIR,
+            boxShadow: "inset 0 4px 0 0 " + PIXEL_OUT,
+            padding: "22px 22px calc(env(safe-area-inset-bottom, 0px) + 22px)",
+          }}
         >
-          <div className="font-serif-cn text-center text-[11px] tracking-[0.3em] text-white/55 mb-1">
-            {theme.slogan}
-          </div>
-          <div className="text-center text-[10px] tracking-[0.2em] text-white/30 mb-4">
+          <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, letterSpacing: 2, color: INK, marginBottom: 4 }}>{theme.slogan}</div>
+          <div style={{ textAlign: "center", fontSize: 11, letterSpacing: 1, color: INK_FAINT, marginBottom: 16 }}>
             {usedRealLocation ? "基于你周边的真实路网" : "示例位置 · 周边路网"} · 选一条出发
           </div>
 
           {/* Route cards */}
-          <div className="grid grid-cols-3 gap-2.5 mb-5">
+          <div className="grid grid-cols-3" style={{ gap: 10, marginBottom: 18 }}>
             {routes.map((r, idx) => {
               const sel = idx === selected;
               return (
@@ -332,52 +338,40 @@ export default function RouteGeneration() {
                     setSelected(idx);
                     if (navigator.vibrate) navigator.vibrate(12);
                   }}
-                  className="relative rounded-2xl px-2.5 py-3 text-left transition-all active:scale-[0.97]"
                   style={{
-                    border: `1px solid ${sel ? theme.color : "rgba(255,255,255,0.12)"}`,
-                    backgroundColor: sel ? `${theme.color}1f` : "rgba(255,255,255,0.04)",
-                    boxShadow: sel ? `0 0 22px ${theme.color}44` : "none",
+                    position: "relative",
+                    textAlign: "left",
+                    padding: "11px 11px 12px",
+                    cursor: "pointer",
+                    border: "none",
+                    background: sel ? accent.tint : "#fffdf7",
+                    clipPath: STAIR,
+                    boxShadow: "inset 0 0 0 2px " + (sel ? accent.fill : "#cbbd99"),
+                    fontFamily: PIXEL_FONT,
                   }}
                 >
-                  <div className="font-serif-cn text-[11px] tracking-[0.15em] text-white/85" style={{ fontWeight: 500 }}>
-                    {r.name}
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, color: INK }}>{r.name}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 3, marginTop: 7 }}>
+                    <span style={{ fontSize: 26, lineHeight: 1, fontWeight: 800, color: sel ? accent.ink : INK }}>{r.distanceKm}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: accent.fill }}>km</span>
                   </div>
-                  <div className="flex items-baseline gap-1 mt-2">
-                    <span className="text-[24px] leading-none tabular-nums font-light" style={{ color: sel ? "#fff" : "rgba(255,255,255,0.8)" }}>
-                      {r.distanceKm}
-                    </span>
-                    <span className="text-[10px]" style={{ color: `${theme.color}cc` }}>km</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-1.5 text-[10px] tabular-nums text-white/55">
-                    <span>{r.durationMin}分钟</span>
-                  </div>
-                  <div className="font-serif-cn text-[9px] tracking-[0.15em] mt-1.5" style={{ color: sel ? `${theme.color}dd` : "rgba(255,255,255,0.4)" }}>
-                    {r.tag}
-                  </div>
+                  <div style={{ marginTop: 5, fontSize: 11, color: INK_SOFT }}>{r.durationMin} 分钟</div>
+                  <div style={{ marginTop: 5, fontSize: 10, fontWeight: 600, letterSpacing: 1, color: sel ? accent.ink : INK_FAINT }}>{r.tag}</div>
                 </button>
               );
             })}
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3">
-            <button
-              onClick={handleRegenerate}
-              className="px-5 h-14 rounded-2xl flex items-center justify-center gap-2 border border-white/15 text-white/80 active:scale-95 transition-transform"
-            >
+          <div style={{ display: "flex", gap: 12 }}>
+            <PixelButton onClick={handleRegenerate} fill="#f6efdf" text={INK} height={54} fontSize={15} fontWeight={700} letter={2} style={{ width: 118 }}>
               <RefreshCw size={15} />
-              <span className="font-serif-cn text-[12px] tracking-[0.25em]">换一批</span>
-            </button>
-            <button
-              onClick={handleConfirm}
-              className="flex-1 h-14 rounded-2xl flex items-center justify-center gap-2 text-black active:scale-[0.98] transition-transform"
-              style={{ backgroundColor: theme.color, boxShadow: `0 0 28px ${theme.color}55` }}
-            >
-              <span className="font-serif-cn text-[14px] tracking-[0.3em]" style={{ fontWeight: 600 }}>
-                出发
-              </span>
+              换一批
+            </PixelButton>
+            <PixelButton onClick={handleConfirm} flex={1} fill={accent.fill} text={accent.text} height={54} fontSize={18} fontWeight={800} letter={5}>
+              出发
               <ArrowRight size={18} />
-            </button>
+            </PixelButton>
           </div>
         </motion.div>
       )}

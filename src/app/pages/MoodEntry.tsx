@@ -1,11 +1,25 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { motion } from "motion/react";
-import { ArrowRight, ChevronLeft } from "lucide-react";
+import {
+  PIXEL_FONT,
+  PIXEL_OUT,
+  PAPER,
+  INK,
+  INK_SOFT,
+  INK_FAINT,
+  STAIR,
+  CTA_COLORS,
+  PixelButton,
+  PixelField,
+  PixelChip,
+  PixelBack,
+} from "../components/pixelKit";
+import SceneBackdrop from "./cycling/SceneBackdrop";
 
-// Step 1 of the flow: the user opens the app and writes, in one sentence, how
-// they feel today. That sentence is the only input the rest of the experience
-// needs — it is handed to /color, where it is turned into an emotion color.
+// Step 1 of the flow: the user writes, in one sentence, how they feel today.
+// DEMO of the "珠绣场景背景" direction: a live bead riding world (赭黄/alley)
+// fills the screen; the form sits in a stair-cornered cream paper panel on top.
+// Pre-colour the accent is the warm 赭黄 (yellow) exploration mood.
 
 const EXAMPLES = [
   "今天有点累，只想一个人安静地骑一会儿",
@@ -15,6 +29,7 @@ const EXAMPLES = [
 ];
 
 const MAX = 60;
+const ACCENT = CTA_COLORS.yellow;
 
 export default function MoodEntry() {
   const navigate = useNavigate();
@@ -27,122 +42,64 @@ export default function MoodEntry() {
   };
 
   return (
-    <div className="size-full overflow-hidden relative flex flex-col bg-[#0a0b10] text-white">
-      {/* Ambient aurora background */}
-      <motion.div
-        aria-hidden
-        className="absolute -top-1/3 left-1/2 -translate-x-1/2 w-[160%] aspect-square rounded-full blur-3xl"
-        style={{
-          background:
-            "radial-gradient(circle at 50% 40%, rgba(79,168,255,0.22), rgba(52,232,158,0.10) 40%, transparent 70%)",
-        }}
-        animate={{ scale: [1, 1.08, 1], opacity: [0.7, 1, 0.7] }}
-        transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
-      />
+    <div className="size-full overflow-hidden relative" style={{ fontFamily: PIXEL_FONT, background: "#efe9dc" }}>
+      {/* live bead riding world behind everything */}
+      <SceneBackdrop color="yellow" />
 
-      {/* Back to the login / landing screen */}
-      <button
-        onClick={() => navigate("/")}
-        aria-label="返回"
-        className="absolute top-12 left-5 z-20 w-9 h-9 flex items-center justify-center rounded-full text-white/55 hover:text-white/90 transition-colors"
-      >
-        <ChevronLeft size={22} />
-      </button>
+      {/* soft scrim so the paper panel reads cleanly off the scene */}
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(20,16,8,0) 40%, rgba(20,16,8,0.16) 100%)", pointerEvents: "none", zIndex: 5 }} />
 
-      {/* Brand */}
-      <motion.div
-        className="relative z-10 pt-16 text-center"
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-      >
-        <span className="text-sm font-light tracking-[0.4em] text-white/50">
-          AURARIDE
-        </span>
-      </motion.div>
-
-      {/* Prompt + input */}
-      <div className="relative z-10 flex-1 flex flex-col justify-center px-7">
-        <motion.h1
-          className="text-[2rem] leading-snug font-light tracking-wide"
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.15 }}
-        >
-          今天，
-          <br />
-          你是什么颜色？
-        </motion.h1>
-
-        <motion.p
-          className="mt-3 text-sm font-light text-white/45"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.7, delay: 0.3 }}
-        >
-          用一句话，写下此刻的心情。
-        </motion.p>
-
-        <motion.div
-          className="mt-8"
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.4 }}
-        >
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value.slice(0, MAX))}
-            placeholder="比如：今天有点累，只想一个人安静地骑一会儿"
-            rows={3}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            className="w-full resize-none bg-transparent text-xl font-light leading-relaxed text-white placeholder:text-white/25 outline-none border-b border-white/15 focus:border-white/40 transition-colors pb-3"
-          />
-          <div className="mt-2 text-right text-xs text-white/30">
-            {trimmed.length}/{MAX}
-          </div>
-        </motion.div>
-
-        {/* Example chips */}
-        <motion.div
-          className="mt-6 flex flex-wrap gap-2"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.7, delay: 0.55 }}
-        >
-          {EXAMPLES.map((ex) => (
-            <button
-              key={ex}
-              onClick={() => setText(ex)}
-              className="text-xs font-light text-white/55 border border-white/12 rounded-full px-3 py-1.5 hover:border-white/35 hover:text-white/80 transition-colors"
-            >
-              {ex.length > 12 ? ex.slice(0, 12) + "…" : ex}
-            </button>
-          ))}
-        </motion.div>
+      {/* top bar over the scene */}
+      <div className="relative z-10 flex items-center justify-between px-5 pt-12">
+        <PixelBack onClick={() => navigate("/")} />
+        <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: 4, color: INK, textShadow: "0 1px 0 rgba(255,255,255,0.5)" }}>光屿骑行</span>
+        <div style={{ width: 40 }} />
       </div>
 
-      {/* CTA */}
-      <motion.div
-        className="relative z-10 px-7 pb-12"
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, delay: 0.5 }}
+      {/* form — centered floating card */}
+      <div
+        className="pixel-pop"
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: "min(88vw, 380px)",
+          maxHeight: "82%",
+          overflowY: "auto",
+          zIndex: 10,
+          background: PAPER,
+          clipPath: STAIR,
+          boxShadow: "inset 0 0 0 3px " + PIXEL_OUT,
+          padding: "24px 22px",
+        }}
       >
-        <button
-          onClick={submit}
-          disabled={!trimmed}
-          className="w-full h-14 rounded-2xl flex items-center justify-center gap-2 text-base font-normal tracking-wide transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-white text-black active:scale-[0.98]"
-        >
-          生成我的颜色
-          <ArrowRight size={18} />
-        </button>
-      </motion.div>
+        <h1 style={{ fontSize: 27, lineHeight: 1.25, fontWeight: 800, letterSpacing: 1, color: INK, margin: 0 }}>
+          今天，你是什么颜色？
+        </h1>
+        <p style={{ marginTop: 8, marginBottom: 18, fontSize: 14, fontWeight: 500, color: INK_SOFT }}>用一句话，写下此刻的心情。</p>
+
+        <PixelField value={text} onChange={(v) => setText(v.slice(0, MAX))} placeholder="比如：今天有点累，只想一个人安静地骑一会儿" accent={ACCENT.fill} multiline />
+        <div style={{ marginTop: 6, textAlign: "right", fontSize: 12, color: INK_FAINT }}>
+          {trimmed.length}/{MAX}
+        </div>
+
+        <div className="flex flex-wrap gap-2" style={{ marginTop: 10 }}>
+          {EXAMPLES.map((ex) => (
+            <PixelChip key={ex} onClick={() => setText(ex)} accent={ACCENT.fill}>
+              {ex.length > 12 ? ex.slice(0, 12) + "…" : ex}
+            </PixelChip>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 18 }}>
+          <PixelButton onClick={submit} disabled={!trimmed} fill={ACCENT.fill} text={ACCENT.text} height={56} fontSize={18} letter={4}>
+            生成我的颜色
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={ACCENT.text} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          </PixelButton>
+        </div>
+      </div>
     </div>
   );
 }

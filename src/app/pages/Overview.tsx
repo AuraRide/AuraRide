@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { X } from "lucide-react";
-import { emotionMeta, loadRides, type RidePhoto } from "../lib/journal";
+import { emotionMeta, type RidePhoto, type RideRecord } from "../lib/journal";
+import { repo } from "../lib/rideRepo";
+import { PIXEL_FONT, PIXEL_OUT, INK, INK_SOFT, STAIR, CTA_COLORS, PixelButton } from "../components/pixelKit";
 
 // "旅程全览" — a full-screen, story-style photo overview that auto-plays through
 // the rider's moments: a stats cover, one chapter per emotion colour, then a
@@ -45,7 +47,8 @@ const SCATTER = [
 
 export default function Overview() {
   const navigate = useNavigate();
-  const rides = useMemo(() => loadRides(), []);
+  const [rides, setRides] = useState<RideRecord[]>([]);
+  useEffect(() => { repo.listRides().then(setRides); }, []);
 
   const { scenes, totalDistance, totalRides, totalPhotos, dominant, allPhotos } =
     useMemo(() => {
@@ -105,21 +108,16 @@ export default function Overview() {
 
   if (!hasPhotos) {
     return (
-      <div className="size-full bg-[#070810] text-white flex flex-col items-center justify-center gap-5 px-10 text-center">
-        <div className="font-serif-cn text-[13px] tracking-[0.3em] text-white/55">
-          还没有拍下任何瞬间
-        </div>
-        <div className="font-serif-cn text-[11px] tracking-[0.2em] text-white/30 leading-relaxed">
+      <div className="size-full flex flex-col items-center justify-center gap-5 px-10 text-center" style={{ fontFamily: PIXEL_FONT, background: "linear-gradient(180deg, #f4efe3 0%, #e9e2d2 100%)", color: INK }}>
+        <div style={{ fontSize: 14, letterSpacing: 2, color: INK, fontWeight: 800 }}>还没有拍下任何瞬间</div>
+        <div style={{ fontSize: 12, letterSpacing: 1, color: INK_SOFT, lineHeight: 1.8, fontWeight: 500 }}>
           骑行途中拍下照片，
           <br />
           这里会把它们汇成一段旅程
         </div>
-        <button
-          onClick={() => navigate("/")}
-          className="mt-2 px-6 py-2.5 rounded-full border border-white/20 font-serif-cn text-[11px] tracking-[0.35em] text-white/80 active:scale-95 transition-transform"
-        >
-          去骑行
-        </button>
+        <div style={{ width: 180, marginTop: 6 }}>
+          <PixelButton onClick={() => navigate("/")} fill={CTA_COLORS.yellow.fill} text={CTA_COLORS.yellow.text} height={48} fontSize={14} letter={4}>去骑行</PixelButton>
+        </div>
       </div>
     );
   }
@@ -316,8 +314,8 @@ function ColorScene({ scene }: { scene: Extract<Scene, { kind: "color" }> }) {
             return (
               <motion.div
                 key={p.takenAt}
-                className="relative aspect-square rounded-xl overflow-hidden"
-                style={{ border: `1px solid ${meta.color}99`, boxShadow: `0 0 14px ${meta.color}44` }}
+                className="relative aspect-square overflow-hidden"
+                style={{ clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT }}
                 initial={{ opacity: 0, scale: 0.6, rotate: s.r * 2, x: s.dx, y: s.dy + 20 }}
                 animate={{ opacity: 1, scale: 1, rotate: s.r, x: 0, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.3 + i * 0.09, ease: "easeOut" }}
@@ -325,8 +323,8 @@ function ColorScene({ scene }: { scene: Extract<Scene, { kind: "color" }> }) {
                 <img src={p.dataUrl} alt="" className="w-full h-full object-cover" />
                 {p.caption && (
                   <div
-                    className="absolute inset-x-0 bottom-0 px-1.5 py-1 font-serif-cn text-[9px] tracking-[0.1em] text-white/95 truncate"
-                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }}
+                    className="absolute inset-x-0 bottom-0 px-1.5 py-1 text-[9px] tracking-[0.1em] text-white/95 truncate"
+                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)", fontFamily: PIXEL_FONT }}
                   >
                     {p.caption}
                   </div>
@@ -381,19 +379,12 @@ function FinaleScene({ photos, dominant }: { photos: Moment[]; dominant: string 
           </div>
 
           <div className="mt-8 flex gap-3 justify-center">
-            <button
-              onClick={() => navigate("/journal")}
-              className="px-6 h-12 rounded-full border border-white/20 font-serif-cn text-[12px] tracking-[0.3em] text-white/85 active:scale-95 transition-transform"
-            >
-              完成
-            </button>
-            <button
-              onClick={() => navigate(0)}
-              className="px-6 h-12 rounded-full font-serif-cn text-[12px] tracking-[0.3em] text-black active:scale-[0.98] transition-transform"
-              style={{ backgroundColor: dominant, boxShadow: `0 0 24px ${dominant}66` }}
-            >
-              再看一次
-            </button>
+            <div style={{ width: 130 }}>
+              <PixelButton onClick={() => navigate("/journal")} fill="#f6efdf" text={INK} height={48} fontSize={14} fontWeight={700} letter={3}>完成</PixelButton>
+            </div>
+            <div style={{ width: 150 }}>
+              <PixelButton onClick={() => navigate(0)} fill={dominant} text="#241a10" height={48} fontSize={14} fontWeight={800} letter={3}>再看一次</PixelButton>
+            </div>
           </div>
         </motion.div>
       </div>

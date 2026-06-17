@@ -1,7 +1,7 @@
 import { createBrowserRouter } from "react-router";
+import CyclingStart from "./pages/cycling/CyclingStart";
 import MoodEntry from "./pages/MoodEntry";
 import ColorReveal from "./pages/ColorReveal";
-import EmotionSlider from "./pages/EmotionSlider";
 import ColorCompass from "./pages/ColorCompass";
 import DeepSeaState from "./pages/DeepSeaState";
 import HealingState from "./pages/HealingState";
@@ -15,11 +15,14 @@ import Review from "./pages/Review";
 import WatchRiding from "./pages/WatchRiding";
 import Journal from "./pages/Journal";
 import Overview from "./pages/Overview";
+import ShareCard from "./pages/ShareCard";
+import Discover from "./pages/Discover";
+import PostDetail from "./pages/PostDetail";
 
 export const router = createBrowserRouter([
   {
     path: "/",
-    Component: EmotionSlider,
+    Component: CyclingStart,
   },
   {
     path: "/mood",
@@ -28,10 +31,6 @@ export const router = createBrowserRouter([
   {
     path: "/color",
     Component: ColorReveal,
-  },
-  {
-    path: "/emotions",
-    Component: EmotionSlider,
   },
   {
     path: "/phone",
@@ -84,5 +83,17 @@ export const router = createBrowserRouter([
   {
     path: "/overview",
     Component: Overview,
+  },
+  {
+    path: "/share",
+    Component: ShareCard,
+  },
+  {
+    path: "/discover",
+    Component: Discover,
+  },
+  {
+    path: "/post/:id",
+    Component: PostDetail,
   },
 ]);

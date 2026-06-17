@@ -9,9 +9,9 @@ export default function WatchSelector() {
   const devices = [
     {
       id: "phone",
-      name: "情绪滑动",
+      name: "光屿骑行",
       icon: Smartphone,
-      path: "/emotions",
+      path: "/",
       description: "全新体验",
     },
     {

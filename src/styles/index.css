@@ -12,3 +12,41 @@ body,
 body {
   margin: 0;
 }
+
+/* pixel bottom-sheet slide-up (CSS-timeline driven, so it lands at rest even
+   when rAF is throttled) */
+@keyframes pixelSheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.pixel-sheet-up {
+  animation: pixelSheetUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pixelSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.pixel-spin {
+  animation: pixelSpin 2.4s linear infinite;
+}
+
+/* centered modal pop-in (CSS-timeline driven, lands at rest even if rAF throttled) */
+@keyframes pixelPop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+.pixel-pop {
+  animation: pixelPop 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
