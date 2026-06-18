@@ -28,5 +28,6 @@
     }
   },
   "include": ["src"],
+  "exclude": ["docs/.vitepress", "docs/**/*"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
