@@ -42,8 +42,6 @@ jobs:
         run: pnpm docs:build
 
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true # auto-enable Pages on the repo if not configured yet
 
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -51,6 +49,9 @@ jobs:
 
   deploy:
     needs: build
+    # Only deploy from main — feature branches (mvp-a, etc.) build for CI gate but
+    # don't push to the live site. Aligns with github-pages env protection (main-only).
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
