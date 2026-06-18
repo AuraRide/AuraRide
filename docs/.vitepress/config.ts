@@ -12,9 +12,18 @@ export default withMermaid(
     base: "/AuraRide/",
     cleanUrls: true,
     lastUpdated: true,
-    // Out-of-docs links (../../AGENTS.md, ../../src/...) work in GitHub view but
-    // VitePress can't resolve files outside docs/. Skip those; in-docs dead links still error.
-    ignoreDeadLinks: [/\.\.\/\.\.\//],
+    // Out-of-docs links work in GitHub view but VitePress can't resolve them. Skip:
+    //  - ../../X  — links from docs/<sub>/ pointing back to repo root
+    //  - ./docs/X / ./guidelines/X / ./.claude/X — root-relative paths inside files
+    //    @include'd from repo root (AGENTS.md, README.md etc) into docs/根文档/
+    // In-docs dead links still error.
+    ignoreDeadLinks: [
+      /\.\.\/\.\.\//,
+      /^\.\/docs\//,
+      /^\.\/guidelines\//,
+      /^\.\/\.claude\//,
+      /^\.\/(README|AGENTS|CLAUDE|ATTRIBUTIONS)/,
+    ],
 
     head: [
       ["meta", { name: "theme-color", content: "#FF6A5E" }],
@@ -28,6 +37,7 @@ export default withMermaid(
         { text: "决策", link: "/决策/ADR-001-在线文档平台" },
         { text: "工程", link: "/工程/ROADMAP-mvp-a" },
         { text: "比赛", link: "/比赛/作品说明文档-初稿" },
+        { text: "根文档", link: "/根文档/README" },
         { text: "GitHub", link: "https://github.com/AuraRide/AuraRide" },
       ],
 
@@ -65,6 +75,17 @@ export default withMermaid(
           {
             text: "参赛资料",
             items: [{ text: "作品说明文档(初稿)", link: "/比赛/作品说明文档-初稿" }],
+          },
+        ],
+        "/根文档/": [
+          {
+            text: "仓库根文档(镜像)",
+            items: [
+              { text: "README · 项目简介", link: "/根文档/README" },
+              { text: "AGENTS.md · 给 AI 协作者的约定", link: "/根文档/AGENTS" },
+              { text: "CLAUDE.md · 给 Claude Code 的入口", link: "/根文档/CLAUDE" },
+              { text: "ATTRIBUTIONS · 致谢", link: "/根文档/ATTRIBUTIONS" },
+            ],
           },
         ],
       },
