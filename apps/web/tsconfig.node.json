@@ -8,7 +8,8 @@
     "allowSyntheticDefaultImports": true,
     "isolatedModules": true,
     "moduleDetection": "force",
-    "noEmit": true
+    "composite": true,
+    "tsBuildInfoFile": "node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
   "include": ["vite.config.ts", "postcss.config.mjs"]
 }

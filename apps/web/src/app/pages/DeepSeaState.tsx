@@ -8,7 +8,7 @@ import mapBg from "../../imports/image-7.png";
 export default function DeepSeaState() {
   const navigate = useNavigate();
   const [isPressed, setIsPressed] = useState(false);
-  const [pressTimer, setPressTimer] = useState<NodeJS.Timeout | null>(null);
+  const [pressTimer, setPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [progress, setProgress] = useState(0);
   const [isExiting, setIsExiting] = useState(false);
 

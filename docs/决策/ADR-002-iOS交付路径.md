@@ -11,7 +11,7 @@
 
 **触发**:chenzhuowen 提出"MVP 阶段把 iPhone 预览容器部署在 web 上"。
 
-**事实核查**:陈娟早在 commit `9d5cd5f` (2026-06-08)已实现 —— [`apps/web/src/app/components/MobileOnly.tsx`](../../src/app/components/MobileOnly.tsx) 在桌面浏览器自动渲染 **390×844 iPhone 框架**(iPhone 13/14 尺寸),真手机访问则全屏。**这就是我们的"iOS demo"**。
+**事实核查**:陈娟早在 commit `9d5cd5f` (2026-06-08)已实现 —— [`apps/web/src/app/components/MobileOnly.tsx`](../../apps/web/src/app/components/MobileOnly.tsx) 在桌面浏览器自动渲染 **390×844 iPhone 框架**(iPhone 13/14 尺寸),真手机访问则全屏。**这就是我们的"iOS demo"**。
 
 ### 新交付矩阵
 
@@ -104,12 +104,12 @@
 
 | # | 原则 | 落地动作 | 给未来 Swift 的好处 |
 |---|---|---|---|
-| 1 | **纯算法函数与 UI 解耦** | [`src/app/lib/moodColor.ts`](../../src/app/lib/moodColor.ts) 这种纯函数,**不引用任何 React/DOM 类型**。未来 `src/app/lib/colorEngines/*.ts` 也守住这条。 | Swift 重写时这些函数可以 1 周内被 LLM 翻成纯 Swift(算法 = 算法,语言无关) |
-| 2 | **色卡常量是 manifesto §1 的镜像,不是散落的 hex** | [`COLOR_PROFILES`](../../src/app/lib/moodColor.ts) 集中定义。Swift 端建一个同名 enum + struct,值从同一份 manifesto §1 表抄过来。 | 视觉一致性 = 同源数据 |
-| 3 | **设计 token 镜像** | [`default_shadcn_theme.css`](../../default_shadcn_theme.css) 的颜色/圆角/间距/字号,Swift 端建一个 `DesignTokens.swift` 1:1 翻一份。陈娟的 Figma 同时驱动两端。 | 视觉一致性 |
+| 1 | **纯算法函数与 UI 解耦** | [`apps/web/src/app/lib/moodColor.ts`](../../apps/web/src/app/lib/moodColor.ts) 这种纯函数,**不引用任何 React/DOM 类型**。未来 `apps/web/src/app/lib/colorEngines/*.ts` 也守住这条。 | Swift 重写时这些函数可以 1 周内被 LLM 翻成纯 Swift(算法 = 算法,语言无关) |
+| 2 | **色卡常量是 manifesto §1 的镜像,不是散落的 hex** | [`COLOR_PROFILES`](../../apps/web/src/app/lib/moodColor.ts) 集中定义。Swift 端建一个同名 enum + struct,值从同一份 manifesto §1 表抄过来。 | 视觉一致性 = 同源数据 |
+| 3 | **设计 token 镜像** | [`default_shadcn_theme.css`](../../apps/web/default_shadcn_theme.css) 的颜色/圆角/间距/字号,Swift 端建一个 `DesignTokens.swift` 1:1 翻一份。陈娟的 Figma 同时驱动两端。 | 视觉一致性 |
 | 4 | **避免 React-only 的"难翻译"依赖** | 核心动效优先用 **CSS @keyframes / Web Animations API**(能 1:1 翻成 Core Animation),少用复杂的 framer-motion 编排;复杂效果限制在"装饰层",核心交互必须降级可用 | 减少 Swift 端动画工作量 |
-| 5 | **数据访问通过 `repo` 抽象**(已经做了!) | [`rideRepo.ts`](../../src/app/lib/rideRepo.ts) 是接口,localStorage 是实现。Swift 端实现同一接口的 Core Data / SwiftData 版即可 | 业务逻辑零改动 |
-| 6 | **页面 = 视觉模板 + 调用纯函数**,不把业务逻辑塞进组件 | 每个 [`pages/`](../../src/app/pages/) 组件理想是"从 repo 读数据 → 调纯函数算颜色 → 渲染",而不是组件里写算法 | Swift 端只需重画视觉模板 |
+| 5 | **数据访问通过 `repo` 抽象**(已经做了!) | [`rideRepo.ts`](../../apps/web/src/app/lib/rideRepo.ts) 是接口,localStorage 是实现。Swift 端实现同一接口的 Core Data / SwiftData 版即可 | 业务逻辑零改动 |
+| 6 | **页面 = 视觉模板 + 调用纯函数**,不把业务逻辑塞进组件 | 每个 [`pages/`](../../apps/web/src/app/pages/) 组件理想是"从 repo 读数据 → 调纯函数算颜色 → 渲染",而不是组件里写算法 | Swift 端只需重画视觉模板 |
 | 7 | **Figma 设计源文件版本化** | 陈娟把 Figma 文件 export 到 `design/` 目录,或者用 [Figma 链接 + Code Connect](https://www.figma.com/code-connect-docs/) 关联 React/SwiftUI 双端组件 | 一份设计、两端落地 |
 
 > 这 7 条做到后,未来 Swift 重写大致是:**1 周翻算法 + 2 周搭设计系统 + 4 周做页面**——而不是"7 周重做一切"。

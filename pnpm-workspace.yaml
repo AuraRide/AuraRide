@@ -1,5 +1,6 @@
 packages:
-  - '.'
+  - 'apps/*'
+  - 'packages/*'
 
 overrides:
   vite: 6.3.5

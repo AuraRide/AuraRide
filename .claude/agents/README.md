@@ -6,8 +6,8 @@
 
 | 名字 | 用途 | 何时主动用 |
 | --- | --- | --- |
-| `color-manifesto-guard` | 审计 diff 是否破坏 `docs/产品/一切皆颜色.md` §7 的 9 条工程不变量 | 任何动 `src/app/lib/moodColor.ts`、`src/app/lib/colorEngines/**` 或新增"染色"路径的 PR,合并前都应跑一次 |
-| `design-page-reviewer` | 按 `guidelines/Guidelines.md` + manifesto §5 审视一个新页面 | 新增或大改 `src/app/pages/` 下任一文件后 |
+| `color-manifesto-guard` | 审计 diff 是否破坏 `docs/产品/一切皆颜色.md` §7 的 9 条工程不变量 | 任何动 `apps/web/src/app/lib/moodColor.ts`、`apps/web/src/app/lib/colorEngines/**` 或新增"染色"路径的 PR,合并前都应跑一次 |
+| `design-page-reviewer` | 按 `guidelines/Guidelines.md` + manifesto §5 审视一个新页面 | 新增或大改 `apps/web/src/app/pages/` 下任一文件后 |
 
 ## 怎么调用
 
