@@ -252,4 +252,9 @@ export const localRepo: RideRepo = {
 
 // The single repo the app uses. Swap this to `supabaseRepo` once the backend
 // lands — no page changes required.
-export const repo: RideRepo = localRepo;
+//
+// ADR-005 §2: 有 VITE_API_BASE_URL(或 Vite dev proxy 已配置时,即使为空字符串
+// 也走 apiRepo)→ apiRepo(fetch 真后端,失败自动降级 localRepo);
+// 无 → 继续 localRepo,陈娟本机 dev 体感 0 改动。
+import { apiRepo } from "./apiRepo";
+export const repo: RideRepo = import.meta.env.VITE_API_BASE_URL ? apiRepo : localRepo;
