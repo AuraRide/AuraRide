@@ -4,13 +4,15 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "dotenvx run -f ../AuraRide-env/.env.public -- vite",
+    "build": "dotenvx run -f ../AuraRide-env/.env.public -- vite build",
+    "preview": "dotenvx run -f ../AuraRide-env/.env.public -- vite preview",
     "typecheck": "tsc --noEmit",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "env:add-public": "echo 'usage: 直接编辑 ../AuraRide-env/.env.public 然后 cd 过去 commit + push'",
+    "env:add-secret": "echo 'usage: pnpm exec dotenvx set MY_KEY=PLACEHOLDER -f ../AuraRide-env/.env.production'"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -73,6 +75,7 @@
   },
   "devDependencies": {
     "@braintree/sanitize-url": "^7.1.2",
+    "@dotenvx/dotenvx": "^1.74.2",
     "@tailwindcss/vite": "4.1.12",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
