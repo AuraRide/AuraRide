@@ -1,9 +1,50 @@
 # ADR-002 · iOS 交付路径(启明赛 framing)
 
-> **状态**: ✅ 已决定 — 当前继续 React + Vite 网页原型,**为未来 Swift 重写主动做架构准备**;真要做 iOS 时走 SwiftUI 原生重写(Capacitor 仅作 30 分钟应急 demo 工具)
-> **日期**: 2026-06-18(v2,基于用户反馈 + 启明赛重 framing)
+> **状态**: ✅ 已决定(v3,2026-06-21 进一步简化:**MVP 用 web 手机框替代原生 demo,Capacitor + 7 天免费签名只供 chenzhuowen 个人测试**)
+> **日期**: 2026-06-18 创建,2026-06-21 v3 简化
 > **作者**: chenzhuowen + Claude
-> **上下文**: [`PRD.md` §6 决策⚠️1](../产品/PRD.md) · [`ROADMAP-mvp-a.md`](../工程/ROADMAP-mvp-a.md)
+> **上下文**: [`PRD.md` §6 决策⚠️1](../产品/PRD.md) · [`ROADMAP-mvp-a.md`](../工程/ROADMAP-mvp-a.md) · [`ADR-005-后端开发工作流.md`](./ADR-005-后端开发工作流.md)
+
+---
+
+## 🆕 2026-06-21 v3 重大简化:Web 手机框 = MVP 的"iOS demo"
+
+**触发**:chenzhuowen 提出"MVP 阶段把 iPhone 预览容器部署在 web 上"。
+
+**事实核查**:陈娟早在 commit `9d5cd5f` (2026-06-08)已实现 —— [`apps/web/src/app/components/MobileOnly.tsx`](../../src/app/components/MobileOnly.tsx) 在桌面浏览器自动渲染 **390×844 iPhone 框架**(iPhone 13/14 尺寸),真手机访问则全屏。**这就是我们的"iOS demo"**。
+
+### 新交付矩阵
+
+| 受众 | 看到什么 | 怎么访问 | 成本 |
+|---|---|---|---|
+| **评委 / 投资人 / 路人**(99% 流量) | iPhone 框架里的 web app | 浏览器开 `auraride.cn` | ¥0 |
+| **陈娟**(daily UI 迭代) | 同上 | 同上 | ¥0 |
+| **真手机用户**(国内访问) | 全屏 web | 手机浏览器开 `auraride.cn` | ¥0 |
+| **chenzhuowen 个人验证 native 感**(1%) | 真 iPhone 上的原生壳 | Capacitor + 7 天免费签名 + Xcode + 数据线装 | ¥0 |
+
+### 这意味着什么不要做
+
+- ❌ **不付 $99/年 Apple Developer Program**(7 天免费签名不需要)
+- ❌ **不上 TestFlight**(没账号也用不了,且陈娟和评委不需要装真 App)
+- ❌ **不申请 App Store 上架**(初赛 + 复赛全程不需要,赛后再说)
+- ❌ **不写 iOS 复杂的 Native 集成**(没必要)
+
+### Capacitor 还要做吗?
+
+**做,但极简**。半天工作量,只生成 Xcode 项目 + 用 Personal Team 免费签名 + 数据线装 chenzhuowen 自己 iPhone。
+
+理由:
+- 复赛视频里**几秒"真在 iPhone 上跑"的镜头**比"web 在 iPhone 框里跑"质感更高
+- chenzhuowen 自己验证"真原生场景下(后台 GPS / 摄像头 / Live Activity)Capacitor 插件是否真能跑"
+- 万一启迪决赛(虽然我们不是)需要,Capacitor 骨架已存在,只需切付费账号
+
+### 时间预算调整
+
+| 旧估计(原计划) | 新估计(v3 简化后) |
+|---|---|
+| iOS 套壳 1-3 天 + Apple 账号 1-3 天 + TestFlight 配置 1 天 = 3-7 天 | **Capacitor 半天 + 个人签名 30 分钟 = 半天** |
+
+---
 
 ---
 
