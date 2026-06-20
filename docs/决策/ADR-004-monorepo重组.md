@@ -309,3 +309,7 @@ git revert <重组 commit>
 - Capacitor monorepo 配置:https://capacitorjs.com/docs/getting-started
 - tygo(Go struct → TS interface):https://github.com/gzuidhof/tygo
 - Turborepo monorepo 模式参考:https://turbo.build/repo/docs/handbook
+
+
+---
+**📌 相关 ADR**:[`ADR-005-后端开发工作流.md`](./ADR-005-后端开发工作流.md) 详述了:web 通过 `apiRepo` + Vite proxy 与后端解耦的具体实现(陈娟代码 0 修改)、新 feature 的 3 种工作流(她 Claude Code 自服务 / 提 Issue / 前端 mock 先合)、server-as-CI 的 PR preview channel 设计。
