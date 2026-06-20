@@ -1,0 +1,38 @@
+; systemd unit —— 部署到 /etc/systemd/system/auraride-worker.service
+; 详见 docs/决策/ADR-005-后端开发工作流.md(deploy SSH user + atomic deploy 章节)。
+[Unit]
+Description=AuraRide Python Worker (VLM 染色 + 段聚合)
+After=network-online.target redis-server.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=auraride
+Group=auraride
+WorkingDirectory=/opt/auraride/worker
+EnvironmentFile=/etc/auraride/worker.env
+
+; 直接用 uv 跑,Python 3.12 由 uv 自管
+ExecStart=/usr/local/bin/uv run --no-sync dramatiq auraride_worker.main \
+  --processes 1 --threads 4 --queues colorize aggregate
+
+Restart=on-failure
+RestartSec=5s
+
+; 资源闸门 —— 2C4G6M 轻量服务器,worker 不能挤垮 API
+MemoryMax=600M
+CPUQuota=120%
+
+; 安全沙箱
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/auraride/worker /var/log/auraride
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=auraride-worker
+
+[Install]
+WantedBy=multi-user.target
