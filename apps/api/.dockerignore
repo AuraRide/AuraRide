@@ -1,0 +1,7 @@
+bin/
+tests/testdata/
+*.log
+*.env
+.env.*
+Makefile
+README.md

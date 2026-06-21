@@ -1,20 +1,18 @@
 # =============================================================================
-# AuraRide · Caddy 反向代理配置
+# AuraRide · Caddy 反向代理(运行在 docker compose 的 caddy 容器中)
 # =============================================================================
-# 部署位置:服务器 122.51.109.165 的 /etc/caddy/Caddyfile
-# 推送方式:GH Actions deploy.yml 把这个文件 scp 过去 + caddy reload
+# 容器路径:/etc/caddy/Caddyfile(由 docker-compose.yml 通过 bind mount 注入)
+# 静态目录:/srv/auraride/web(由 docker-compose.prod.yml bind mount 自服务器 /var/www/auraride/web)
 #
 # Caddy 自动:
-#   1. 从 Let's Encrypt 申请所有域名的 SSL 证书(无需配置)
-#   2. 每 60 天自动续期
-#   3. HTTP → HTTPS 强制跳转
-#   4. HTTP/2 + HTTP/3 自动启用
-#   5. gzip + brotli 压缩
+#   1. 从 Let's Encrypt 申请 SSL(无需配置)
+#   2. 每 60 天续期(状态持久到 caddy_data named volume)
+#   3. HTTP → HTTPS 跳转
+#   4. HTTP/2 + HTTP/3
+#   5. gzip + zstd 压缩
 #
-# 路由:
-#   - auraride.cn            → :8080 (Go API + 前端静态)
-#   - staging.auraride.cn    → :8443 (staging)
-#   - pr-N.preview.auraride.cn → :80NN (PR preview channels)
+# upstream 用 docker 内网 hostname(compose service name 即 DNS 名),
+# 不再是 localhost:8080(因为 caddy 现在跑在容器里)
 # =============================================================================
 
 
@@ -22,25 +20,22 @@
 # Production: auraride.cn + www.auraride.cn
 # -----------------------------------------------------------------------------
 auraride.cn, www.auraride.cn {
-    # API 路由优先匹配
     handle /api/* {
-        reverse_proxy localhost:8080
+        reverse_proxy api:8080
     }
 
-    # 上传走代理(Go API 签发 STS,前端 PUT 到 COS,这条理论上前端不会走;留作 fallback)
     handle /upload/* {
-        reverse_proxy localhost:8080
+        reverse_proxy api:8080
     }
 
     # SPA 兜底:其他路径都给 React 的 index.html
     handle {
-        root * /var/www/auraride/web
+        root * /srv/auraride/web
         try_files {path} /index.html
         file_server
         encode gzip zstd
     }
 
-    # 日志
     log {
         output file /var/log/caddy/auraride.cn.log {
             roll_size 100mb
@@ -52,20 +47,21 @@ auraride.cn, www.auraride.cn {
 
 
 # -----------------------------------------------------------------------------
-# Staging: staging.auraride.cn(陈娟 + chenzhuowen 看 "latest mvp-a" 的地方)
+# Staging: staging.auraride.cn(陈娟 + chenzhuowen 看最新 mvp-a)
 # -----------------------------------------------------------------------------
 staging.auraride.cn {
     handle /api/* {
-        reverse_proxy localhost:8443
+        # staging 仍打到同一个 api 容器(MVP 阶段无独立 staging api)
+        reverse_proxy api:8080
     }
-    handle /upload/* {
-        reverse_proxy localhost:8443
-    }
+
     handle {
-        root * /var/www/auraride/staging
+        root * /srv/auraride/staging
         try_files {path} /index.html
         file_server
+        encode gzip zstd
     }
+
     log {
         output file /var/log/caddy/staging.auraride.cn.log
     }
@@ -73,10 +69,10 @@ staging.auraride.cn {
 
 
 # -----------------------------------------------------------------------------
-# API 独立子域:api.auraride.cn(可选,用于将来 CORS 严格的场景)
+# API 独立子域(可选,CORS 严格场景)
 # -----------------------------------------------------------------------------
 api.auraride.cn {
-    reverse_proxy localhost:8080
+    reverse_proxy api:8080
     log {
         output file /var/log/caddy/api.auraride.cn.log
     }
@@ -84,48 +80,14 @@ api.auraride.cn {
 
 
 # -----------------------------------------------------------------------------
-# PR Preview channels: pr-N.preview.auraride.cn → :80NN
-# -----------------------------------------------------------------------------
-# 用 wildcard 匹配,Caddy 解析子域 → 转发到对应端口
-# 端口范围:8001-8099,N 是 PR 号(取模 99,实际 PR 号大时调整)
-#
-# 这条配置依赖 wildcard 证书:
-#   *.preview.auraride.cn
-# 申请:Caddy 会自动用 DNS-01 方式(需要 DNSPod plugin 或外部脚本)
-# MVP 阶段可以先用单独子域 manually,后续 wildcard 切换
-# -----------------------------------------------------------------------------
-
-*.preview.auraride.cn {
-    @pr_match path_regexp ^/.*
-    map {host} {pr_port} {
-        # 由 spawn-preview.sh 动态生成的 import 文件提供具体映射
-        # /etc/caddy/preview-channels.conf
-    }
-    import /etc/caddy/preview-channels.conf*
-
-    handle {
-        # 如果上面 map 没匹配到,返回 404
-        respond "PR preview not found or expired" 404
-    }
-}
-
-
-# -----------------------------------------------------------------------------
-# 安全头(applies to all 上面的站点)
+# 安全头(applies to all)
 # -----------------------------------------------------------------------------
 (security_headers) {
     header {
-        # HTTPS only(HSTS 1 年)
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        # 防 clickjacking
         X-Frame-Options "DENY"
-        # 防 XSS
         X-Content-Type-Options "nosniff"
-        # Referer 策略
         Referrer-Policy "strict-origin-when-cross-origin"
-        # 隐藏服务器版本
         -Server
     }
 }
-
-# 在每个 handle 块里用 `import security_headers` 引入(MVP 先省略,后续上)

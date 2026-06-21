@@ -91,7 +91,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
-      - name: rsync to server(prod web 或 staging)
+      - name: rsync dist → caddy 静态目录
         if: steps.precheck.outputs.skip != 'true'
         env:
           DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
@@ -105,4 +105,6 @@ jobs:
             DEST="/var/www/auraride/staging"
           fi
           rsync -avz --delete dist/ deploy@"$DEPLOY_SSH_HOST":"$DEST"/
-          # Caddy 自动 reload(它 watch 静态目录),不需 systemctl
+          # caddy 在 docker 里,bind mount 自这个 host 目录,SPA 文件变化无需 reload
+          # 触发服务器 git pull(让仓库其他 infra 文件也跟着新)
+          ssh deploy@"$DEPLOY_SSH_HOST" '/opt/auraride/infra/scripts/deploy.sh web'

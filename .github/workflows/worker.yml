@@ -5,6 +5,8 @@ on:
     branches: [main, mvp-a]
     paths:
       - "apps/worker/**"
+      - "docker-compose.yml"
+      - "docker-compose.prod.yml"
       - ".github/workflows/worker.yml"
   workflow_dispatch:
 
@@ -40,8 +42,6 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mvp-a'
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-
       - name: Check SSH secrets
         id: precheck
         env:
@@ -61,17 +61,10 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
-      - name: rsync apps/worker + uv sync + restart
+      - name: ssh server → git pull + docker compose build/up worker
         if: steps.precheck.outputs.skip != 'true'
         env:
           DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
         run: |
           ssh-keyscan -H "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts
-          rsync -avz --delete \
-            --exclude '.venv' --exclude '__pycache__' --exclude '*.pyc' \
-            apps/worker/ deploy@"$DEPLOY_SSH_HOST":/opt/auraride/worker/
-          ssh deploy@"$DEPLOY_SSH_HOST" '
-            cd /opt/auraride/worker &&
-            uv sync --frozen &&
-            sudo systemctl restart auraride-worker
-          '
+          ssh deploy@"$DEPLOY_SSH_HOST" '/opt/auraride/infra/scripts/deploy.sh worker'

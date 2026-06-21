@@ -1,0 +1,134 @@
+# =============================================================================
+# AuraRide · docker-compose 主文件(本机 + 服务器同源)
+# =============================================================================
+# 见 docs/决策/ADR-006-docker-compose-部署.md。
+#
+# 用法(本机):
+#   docker compose up -d postgres redis           # 只起中间件,前端 pnpm dev 兜底
+#   docker compose up -d                          # 全栈起(api / worker 都本机 build)
+#   docker compose down                            # 停;数据卷保留
+#   docker compose down -v                         # 停 + 清数据(谨慎)
+#
+# 用法(服务器):
+#   cd /opt/auraride && \
+#     dotenvx run -f /opt/AuraRide-env/.env.production -- \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# =============================================================================
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: auraride
+      POSTGRES_USER: auraride
+      # 本机:用默认弱密码即可(只 expose 在 docker 网络里)
+      # 服务器:dotenvx 注入真密码
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auraride_dev}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auraride -d auraride"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # 本机调试时偶尔需要 psql 进去,只暴露 127.0.0.1:5432,避免对公网开
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Postgres URL 拼装(compose 网络里 hostname = service name)
+      POSTGRES_URL: postgres://auraride:${POSTGRES_PASSWORD:-auraride_dev}@postgres:5432/auraride?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      # 应用 env(dotenvx 注入到 shell → 这里 interpolate;本机 default 是 dev 占位)
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-do-not-use-in-prod}
+      COS_BUCKET: ${COS_BUCKET:-}
+      COS_REGION: ${COS_REGION:-ap-shanghai}
+      COS_SECRET_ID: ${COS_SECRET_ID:-}
+      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
+      GIN_MODE: ${GIN_MODE:-release}
+      PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # 本机要直接 curl 测,服务器有 caddy 在前面
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build:
+      context: ./apps/worker
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_URL: postgres://auraride:${POSTGRES_PASSWORD:-auraride_dev}@postgres:5432/auraride
+      REDIS_URL: redis://redis:6379/0
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      COS_BUCKET: ${COS_BUCKET:-}
+      COS_REGION: ${COS_REGION:-ap-shanghai}
+      COS_SECRET_ID: ${COS_SECRET_ID:-}
+      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
+      VLM_DAILY_BUDGET_CNY: ${VLM_DAILY_BUDGET_CNY:-20}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # 资源闸门 —— 2C4G6M,worker 不能挤垮 api
+    deploy:
+      resources:
+        limits:
+          memory: 600M
+          cpus: "1.2"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      # 本机一般用不到 caddy,所以前端 dist 目录用 host bind mount;
+      # 服务器上 GH Actions web.yml 把 dist 同步到这里
+      - ${WEB_DIST_DIR:-./apps/web/dist}:/srv/auraride/web:ro
+    depends_on:
+      - api
+    profiles:
+      # 默认不起 caddy,只有 `docker compose --profile prod up` 或服务器 override 里启用
+      - prod
+
+volumes:
+  pg_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
