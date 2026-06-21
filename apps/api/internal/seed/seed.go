@@ -12,7 +12,8 @@ import (
 	"github.com/auraride/auraride/apps/api/internal/store"
 )
 
-const markerKey = "v1"
+// 改 markerKey 触发 re-seed —— 已存在的行 ON CONFLICT 跳过,只插新的
+const markerKey = "v2"
 
 // RunIfEnabled inserts the demo dataset once per database. Subsequent calls
 // notice the marker row and return immediately.
