@@ -119,14 +119,11 @@ services:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-      # 本机一般用不到 caddy,所以前端 dist 目录用 host bind mount;
-      # 服务器上 GH Actions web.yml 把 dist 同步到这里
+      - /var/log/caddy:/var/log/caddy
+      # 静态 dist 目录;默认本机 ./apps/web/dist,服务器用 WEB_DIST_DIR 覆盖到 /var/www/auraride/web
       - ${WEB_DIST_DIR:-./apps/web/dist}:/srv/auraride/web:ro
     depends_on:
       - api
-    profiles:
-      # 默认不起 caddy,只有 `docker compose --profile prod up` 或服务器 override 里启用
-      - prod
 
 volumes:
   pg_data:

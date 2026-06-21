@@ -32,8 +32,7 @@ services:
       VLM_DAILY_BUDGET_CNY: ${VLM_DAILY_BUDGET_CNY:-20}
 
   caddy:
-    # 启用 prod profile 中的 caddy(默认在主文件里被 profile=prod 挡住,这里强制启用)
-    profiles: []
+    # 生产:web 静态目录映射到服务器 /var/www/auraride/web
     volumes:
       - /var/www/auraride/web:/srv/auraride/web:ro
       - /var/log/caddy:/var/log/caddy

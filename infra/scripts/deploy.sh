@@ -34,9 +34,13 @@ ENV_FILE="$ENV_DIR/.env.production"
 
 cd "$REPO_DIR"
 
-echo "▶ git pull 主仓库"
+# 部署分支:GitHub 上 mvp-a → main merge 后,生产从 main 拉
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
+
+echo "▶ git pull 主仓库($DEPLOY_BRANCH)"
 git fetch --quiet origin
-git reset --hard origin/mvp-a   # mvp-a 是当前部署分支,后续切 main
+git checkout "$DEPLOY_BRANCH" 2>/dev/null || true
+git reset --hard "origin/$DEPLOY_BRANCH"
 
 echo "▶ git pull env 仓库"
 git -C "$ENV_DIR" pull --ff-only --quiet || {
