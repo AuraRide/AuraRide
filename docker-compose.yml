@@ -78,7 +78,9 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      # 不用 --spider(发 HEAD,gin 默认不为 GET 路由注册 HEAD → 404 unhealthy)
+      # -qO- 静默 GET,正文够小不浪费 IO
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
