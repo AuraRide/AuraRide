@@ -73,9 +73,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # 本机要直接 curl 测,服务器有 caddy 在前面
+    # 默认对外(MVP 阶段服务器无 caddy 时也能 curl 验证);
+    # 服务器加 docker-compose.prod.yml 会用 ports: [] 关掉,改走 caddy
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
       interval: 30s

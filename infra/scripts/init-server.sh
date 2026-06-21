@@ -55,13 +55,15 @@ sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
 sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' "$SSHD_CONFIG"
 sed -i 's/^#*MaxAuthTries.*/MaxAuthTries 3/' "$SSHD_CONFIG"
 
-echo ""
-echo "⚠️  确认你已经把 chenzhuowen 的 SSH 公钥加到了 /home/ubuntu/.ssh/authorized_keys"
-echo "    没加的话现在按 Ctrl+C 退出,先加,再重跑这个脚本"
-read -p "    按 Enter 继续(将 reload sshd 禁用密码登录) > " _
+# 安全检查:authorized_keys 必须已经有 key(否则禁密码登录后会被锁外面)
+if [ ! -s /home/ubuntu/.ssh/authorized_keys ]; then
+    err "/home/ubuntu/.ssh/authorized_keys 为空 — 先加 SSH 公钥,否则禁密码后你登不上"
+fi
+KEY_COUNT=$(grep -cv '^[[:space:]]*$' /home/ubuntu/.ssh/authorized_keys || true)
+log "    检测到 $KEY_COUNT 个 SSH key,继续"
 
 systemctl reload sshd
-log "    SSH 加固完成"
+log "    SSH 加固完成,密码登录已禁"
 
 
 # -----------------------------------------------------------------------------
@@ -126,14 +128,14 @@ usermod -aG docker deploy
 log "🐳 [6/7] Docker CE + Compose Plugin"
 
 if ! command -v docker >/dev/null 2>&1; then
-    # 用阿里云 docker apt mirror(腾讯也有,二选一)
+    # docker-ce apt repo:腾讯云 mirror(本机就在腾讯云,走 mirrors.cloud.tencent.com 最快)
     install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | \
+    curl -fsSL https://mirrors.cloud.tencent.com/docker-ce/linux/ubuntu/gpg | \
         gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
 
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-        https://mirrors.aliyun.com/docker-ce/linux/ubuntu $(lsb_release -cs) stable" \
+        https://mirrors.cloud.tencent.com/docker-ce/linux/ubuntu $(lsb_release -cs) stable" \
         > /etc/apt/sources.list.d/docker.list
 
     apt update -y
@@ -168,26 +170,58 @@ docker compose version
 # -----------------------------------------------------------------------------
 log "📥 [7/7] Clone 仓库到 /opt/auraride 和 /opt/AuraRide-env"
 
-# 用 deploy 身份 clone
-# 主仓库公开,直接 https clone;env 仓库私有,需 deploy 用户配 SSH key 或临时 PAT
-if [ ! -d /opt/auraride/.git ]; then
-    sudo -u deploy git clone https://github.com/AuraRide/AuraRide.git /opt/auraride
-    log "    主仓库 clone 完成"
-else
-    log "    主仓库已存在,git pull"
-    sudo -u deploy git -C /opt/auraride pull --ff-only
+# 复制 ubuntu 的 SSH key 给 deploy 用户(用于 SSH 拉 AuraRide-env private repo)
+# ubuntu 用户的 key 已加为 GitHub Deploy Key,deploy 用户拷一份即可复用
+mkdir -p /home/deploy/.ssh
+if [ -f /home/ubuntu/.ssh/id_rsa ] && [ ! -f /home/deploy/.ssh/id_rsa ]; then
+    cp /home/ubuntu/.ssh/id_rsa /home/ubuntu/.ssh/id_rsa.pub /home/deploy/.ssh/
+    log "    已复制 ubuntu 的 SSH key 给 deploy"
 fi
+# github.com host fingerprint(避免 deploy 用户首次 ssh 卡在 yes/no)
+if ! sudo -u deploy ssh-keygen -F github.com >/dev/null 2>&1; then
+    ssh-keyscan -H github.com 2>/dev/null >> /home/deploy/.ssh/known_hosts
+fi
+chmod 700 /home/deploy/.ssh
+[ -f /home/deploy/.ssh/id_rsa ] && chmod 600 /home/deploy/.ssh/id_rsa
+[ -f /home/deploy/.ssh/id_rsa.pub ] && chmod 644 /home/deploy/.ssh/id_rsa.pub
+[ -f /home/deploy/.ssh/known_hosts ] && chmod 644 /home/deploy/.ssh/known_hosts
+chown -R deploy:deploy /home/deploy/.ssh
 
+# 国内 github.com:443 不稳,统一走 SSH(我们已有 deploy key)
+# 公开仓库也能用 SSH(deploy key 认证身份够拉 public repo)
+MAIN_REPO_SSH="git@github.com:AuraRide/AuraRide.git"
+ENV_REPO_SSH="git@github.com:AuraRide/AuraRide-env.git"
+
+# 主仓库
+if [ ! -d /opt/auraride/.git ]; then
+    sudo -u deploy git clone "$MAIN_REPO_SSH" /opt/auraride
+    log "    主仓库 clone 完成(SSH)"
+else
+    # 已有的 origin 可能是 https,强制切到 ssh 避免国内超时
+    CURRENT_ORIGIN=$(sudo -u deploy git -C /opt/auraride remote get-url origin 2>/dev/null || echo "")
+    if [[ "$CURRENT_ORIGIN" == https://* ]]; then
+        log "    主仓库 origin 是 HTTPS($CURRENT_ORIGIN),切到 SSH"
+        sudo -u deploy git -C /opt/auraride remote set-url origin "$MAIN_REPO_SSH"
+    fi
+    log "    主仓库已存在,git fetch"
+    sudo -u deploy git -C /opt/auraride fetch --quiet origin
+fi
+# mvp-a 是当前部署分支
+sudo -u deploy git -C /opt/auraride checkout mvp-a 2>/dev/null || true
+sudo -u deploy git -C /opt/auraride reset --hard origin/mvp-a
+
+# env 仓库
 if [ ! -d /opt/AuraRide-env/.git ]; then
-    echo ""
-    echo "⚠️  /opt/AuraRide-env 需要从私有仓库 AuraRide/AuraRide-env clone"
-    echo "    选项 A(推荐):配 deploy 用户的 SSH key 到 GitHub Deploy Key"
-    echo "    选项 B:使用 GH PAT(临时):"
-    echo "      sudo -u deploy git clone https://<PAT>@github.com/AuraRide/AuraRide-env.git /opt/AuraRide-env"
-    echo "    跑完手动 clone 之后,再 dotenvx set 私钥到 /opt/AuraRide-env/.env.keys"
+    sudo -u deploy git clone "$ENV_REPO_SSH" /opt/AuraRide-env || {
+        echo ""
+        echo "⚠ env 仓库 clone 失败,请确认 deploy key 已加到 AuraRide-env 仓库:"
+        echo "  github.com/AuraRide/AuraRide-env/settings/keys"
+        echo "  ssh -T git@github.com 应返回 'Hi AuraRide/AuraRide-env!'"
+        echo "  脚本继续 — 没 env 也能用 dev 默认密码起 api/worker"
+    }
 else
     log "    env 仓库已存在,git pull"
-    sudo -u deploy git -C /opt/AuraRide-env pull --ff-only
+    sudo -u deploy git -C /opt/AuraRide-env pull --ff-only || true
 fi
 
 
