@@ -49,9 +49,10 @@ jobs:
 
   deploy:
     needs: build
-    # Only deploy from main — feature branches (mvp-a, etc.) build for CI gate but
-    # don't push to the live site. Aligns with github-pages env protection (main-only).
-    if: github.ref == 'refs/heads/main'
+    # Deploy from main OR mvp-a (current active dev branch). Both are explicitly
+    # allowed in the github-pages environment deployment-branch-policies. Other
+    # feature branches still build for CI gate but skip deploy.
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mvp-a'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

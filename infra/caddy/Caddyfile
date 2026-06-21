@@ -1,0 +1,78 @@
+# =============================================================================
+# AuraRide · Caddy 反向代理(docker compose 容器内,IP-only MVP 阶段)
+# =============================================================================
+# 容器路径:/etc/caddy/Caddyfile(docker-compose.yml bind mount 注入)
+# 静态目录:/srv/auraride/web(prod 时 bind mount /var/www/auraride/web)
+#
+# 当前模式:**IP-only**(无 DNS,无 SSL)
+#   - 监听 :80,所有 host 落到这个 catch-all
+#   - 服务静态 SPA + /api/* 反代到 api 容器
+#   - 备案 + DNS 加好之后,把下面 TODO 段的 domain block 取消注释,
+#     caddy 会自动申请 LE 证书,启用 HTTPS
+#
+# upstream 用 docker 内网 hostname(compose service name 即 DNS 名)
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# MVP catch-all:任何 host 上的 :80(用 IP 直接访问也走这里)
+# -----------------------------------------------------------------------------
+:80 {
+    # API 路由优先
+    handle /api/* {
+        reverse_proxy api:8080
+    }
+
+    # 上传 fallback(前端实际走 COS 直传,这条防 STS 失败时兜底)
+    handle /upload/* {
+        reverse_proxy api:8080
+    }
+
+    # SPA 兜底
+    handle {
+        root * /srv/auraride/web
+        try_files {path} /index.html
+        file_server
+        encode gzip zstd
+    }
+
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+        format json
+    }
+}
+
+
+# =============================================================================
+# 🚧 TODO:DNS 生效后启用以下 domain blocks(取消注释 + 验证 LE 证书申请通过)
+# =============================================================================
+# auraride.cn, www.auraride.cn {
+#     handle /api/* { reverse_proxy api:8080 }
+#     handle /upload/* { reverse_proxy api:8080 }
+#     handle {
+#         root * /srv/auraride/web
+#         try_files {path} /index.html
+#         file_server
+#         encode gzip zstd
+#     }
+#     log {
+#         output file /var/log/caddy/auraride.cn.log
+#         format json
+#     }
+# }
+#
+# staging.auraride.cn {
+#     handle /api/* { reverse_proxy api:8080 }
+#     handle {
+#         root * /srv/auraride/staging
+#         try_files {path} /index.html
+#         file_server
+#     }
+# }
+#
+# api.auraride.cn {
+#     reverse_proxy api:8080
+# }

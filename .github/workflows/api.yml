@@ -1,0 +1,73 @@
+name: API Build & Deploy
+
+on:
+  push:
+    branches: [main, mvp-a]
+    paths:
+      - "apps/api/**"
+      - "packages/types/**"
+      - "docker-compose.yml"
+      - "docker-compose.prod.yml"
+      - ".github/workflows/api.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Setup Chinese mirror (GOPROXY)
+        run: |
+          echo "GOPROXY=https://goproxy.cn,direct" >> $GITHUB_ENV
+          echo "GOSUMDB=off" >> $GITHUB_ENV
+
+      - name: Tidy + Build + Test
+        working-directory: apps/api
+        run: |
+          go mod tidy
+          go build -o bin/api -ldflags="-s -w -X main.Version=${{ github.sha }}" ./cmd/api
+          go test ./... -race -count=1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mvp-a'
+    continue-on-error: true # 服务器未 ready / SSH key 未配时不阻塞 CI
+    steps:
+      - name: Check SSH secrets configured
+        id: precheck
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_SSH_HOST" ]; then
+            echo "::warning::DEPLOY_SSH_KEY / DEPLOY_SSH_HOST not set in repo secrets — skipping deploy"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup SSH
+        if: steps.precheck.outputs.skip != 'true'
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: ssh server → git pull + docker compose build/up
+        if: steps.precheck.outputs.skip != 'true'
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          ssh-keyscan -H "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts
+          ssh deploy@"$DEPLOY_SSH_HOST" '/opt/auraride/infra/scripts/deploy.sh api'

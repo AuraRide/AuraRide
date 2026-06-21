@@ -1,0 +1,86 @@
+// Package seed loads demo data when SEED_ENABLED=true. Idempotent via the
+// `seed_marker` table.
+package seed
+
+import (
+	"fmt"
+
+	"github.com/auraride/auraride/apps/api/internal/models"
+)
+
+// Users matches plan §9 — me + 5 sample handles.
+var Users = []models.User{
+	{ID: "me", Handle: "我", AvatarColor: "#3a2817", DominantColorID: "explore-yellow"},
+	{ID: "u1", Handle: "拾光的人", AvatarColor: "#3a9b4e", DominantColorID: "calm-green"},
+	{ID: "u2", Handle: "深水区", AvatarColor: "#2f6fd6", DominantColorID: "lonely-blue"},
+	{ID: "u3", Handle: "街角折返", AvatarColor: "#eba81b", DominantColorID: "explore-yellow"},
+	{ID: "u4", Handle: "直道燃尽", AvatarColor: "#d23b2c", DominantColorID: "release-red"},
+	{ID: "u5", Handle: "无轨之风", AvatarColor: "#7c858d", DominantColorID: "tired-gray"},
+}
+
+// SeedRide is the compact internal shape used to expand into ride+photos+post.
+type SeedRide struct {
+	ID            string
+	UserID        string
+	ColorID       string
+	Distance      float64
+	DurationSec   int
+	StartedAt     int64
+	MoodText      string
+	DominantColor string
+	City          string
+	PhotoCount    int
+}
+
+// Rides — 5 pre-recorded Shanghai routes, one per emotion bucket.
+var Rides = []SeedRide{
+	{"r-binjiang", "u1", "calm-green", 4.5, 1620, 1718503200000, "傍晚的江堤,风把心跳调回了潮汐。", "#34E89E", "上海 · 北外滩", 6},
+	{"r-suzhou", "u2", "lonely-blue", 8.2, 2880, 1718416800000, "一个人潜进暗蓝,喧嚣全沉到底。", "#4FA8FF", "上海 · 苏州河", 6},
+	{"r-hengfu", "u3", "explore-yellow", 3.8, 1500, 1718330400000, "宽街收着回声,慢慢走过老城。", "#FFB54A", "上海 · 衡复风貌区", 5},
+	{"r-yangpu", "u4", "release-red", 6.7, 2400, 1718244000000, "把不安全部留在直道上,呼吸归位。", "#FF3344", "上海 · 杨浦滨江", 6},
+	{"r-houtan", "u5", "tired-gray", 5.5, 2100, 1718157600000, "做一阵没有轨迹的风,谁也不必看见。", "#C9D2D8", "上海 · 后滩公园", 5},
+}
+
+// buildPhotos returns the photo rows for one ride.
+func buildPhotos(r SeedRide, bucket, region string) []models.Photo {
+	out := make([]models.Photo, r.PhotoCount)
+	for i := 0; i < r.PhotoCount; i++ {
+		cosKey := fmt.Sprintf("seed/%s/%d.jpg", r.ID, i+1)
+		cosURL := fmt.Sprintf("https://%s.cos.%s.myqcloud.com/%s", bucket, region, cosKey)
+		out[i] = models.Photo{
+			ID:         fmt.Sprintf("seed-%s-%d", r.ID, i+1),
+			RideID:     r.ID,
+			COSKey:     cosKey,
+			COSURL:     cosURL,
+			Color:      r.DominantColor,
+			TakenAt:    r.StartedAt + int64(i*180_000),
+			VLMStatus:  "done",
+			OrderIndex: i,
+		}
+	}
+	return out
+}
+
+// shapeFromSeed mirrors apps/web/src/app/lib/rideRepo.ts so seed posts look
+// identical to a route the front end would have drawn locally.
+func shapeFromSeed(seed int64, n int) [][2]float64 {
+	pts := make([][2]float64, 0, n)
+	a := uint32(seed)
+	rnd := func() float64 {
+		a = a*1664525 + 1013904223
+		return float64(a) / 4294967296.0
+	}
+	x := 0.18 + rnd()*0.1
+	y := 0.9
+	for i := 0; i < n; i++ {
+		pts = append(pts, [2]float64{x, y})
+		x += (rnd() - 0.45) * 0.16
+		y -= 0.86 / float64(n)
+		if x < 0.08 {
+			x = 0.08
+		} else if x > 0.92 {
+			x = 0.92
+		}
+	}
+	return pts
+}

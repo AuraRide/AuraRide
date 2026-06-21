@@ -1,0 +1,38 @@
+# =============================================================================
+# AuraRide · docker-compose 生产 override
+# =============================================================================
+# 只在服务器 122.51.109.165 上用。
+# 命令:
+#   dotenvx run -f /opt/AuraRide-env/.env.production -- \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# =============================================================================
+
+services:
+
+  postgres:
+    # 生产 Postgres 不暴露任何端口(只在 docker 内网)
+    ports: []
+    volumes:
+      # 生产数据持久到 /var/lib/auraride(便于备份脚本)
+      - /var/lib/auraride/postgres:/var/lib/postgresql/data
+
+  redis:
+    ports: []
+    volumes:
+      - /var/lib/auraride/redis:/data
+
+  api:
+    ports: []  # 不直接暴露,caddy 反代
+    environment:
+      GIN_MODE: release
+
+  worker:
+    # 生产环境不限制内存(serv-as-ci),仍受 compose 上 deploy.resources 节制
+    environment:
+      VLM_DAILY_BUDGET_CNY: ${VLM_DAILY_BUDGET_CNY:-20}
+
+  caddy:
+    # 生产:web 静态目录映射到服务器 /var/www/auraride/web
+    volumes:
+      - /var/www/auraride/web:/srv/auraride/web:ro
+      - /var/log/caddy:/var/log/caddy
