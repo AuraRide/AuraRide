@@ -68,6 +68,9 @@ services:
       COS_SECRET_KEY: ${COS_SECRET_KEY:-}
       GIN_MODE: ${GIN_MODE:-release}
       PORT: "8080"
+      # 首次部署灌 demo 数据(5 用户 + 5 上海骑行 + 28 张照片占位):
+      # 单次部署传 SEED_ENABLED=true compose up -d --no-deps api,跑完一次后回 false
+      SEED_ENABLED: ${SEED_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
