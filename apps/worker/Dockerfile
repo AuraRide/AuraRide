@@ -13,8 +13,10 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 WORKDIR /app
 
-# 先拷锁文件 + pyproject,利用 layer 缓存(deps 不变 → 不重装)
-COPY pyproject.toml uv.lock ./
+# 先拷锁文件 + pyproject + README,利用 layer 缓存(deps 不变 → 不重装)
+# README.md 必须在 — pyproject.toml [project].readme 指向它,hatchling editable
+# build 时校验 metadata 会读
+COPY pyproject.toml uv.lock README.md ./
 
 # 镜像加速:清华 pypi
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
