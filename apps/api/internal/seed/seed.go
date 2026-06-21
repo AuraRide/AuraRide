@@ -13,7 +13,8 @@ import (
 )
 
 // 改 markerKey 触发 re-seed —— 已存在的行 ON CONFLICT 跳过,只插新的
-const markerKey = "v2"
+// v2 -> v3:加 me 的 3 条骑行(上次 data.go 没真改进 commit)
+const markerKey = "v3"
 
 // RunIfEnabled inserts the demo dataset once per database. Subsequent calls
 // notice the marker row and return immediately.
