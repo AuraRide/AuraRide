@@ -18,13 +18,13 @@
 # MVP catch-all:任何 host 上的 :80(用 IP 直接访问也走这里)
 # -----------------------------------------------------------------------------
 :80 {
-    # API 路由优先
-    handle /api/* {
+    # API 路由优先;handle_path 会**剥掉** /api 前缀再转发(Go 注册的是 /healthz 不是 /api/healthz)
+    handle_path /api/* {
         reverse_proxy api:8080
     }
 
     # 上传 fallback(前端实际走 COS 直传,这条防 STS 失败时兜底)
-    handle /upload/* {
+    handle_path /upload/* {
         reverse_proxy api:8080
     }
 
