@@ -88,3 +88,9 @@ docs/  guidelines/      # 真相源文档(不动)
 
 - 提交前确保通过验证回路。
 - commit message 用祈使句、说明"为什么";本仓库用 PR 流程合并到 `main`。
+- **禁止直接推 `main`**:任何改动(包括 fix / chore / 文档)都走 `feature-branch → PR → gh pr merge --squash` 流程。理由:
+  - main 历史保持线性 + 每个 squash commit = 一个完整 PR 描述(为什么 + 测试 + 影响面)
+  - CI 真起 gate 作用(skip 不再无所谓,deploy step 红就拦)
+  - 给 `code-review` 子代理留切入点 — 直接 push 跳过审计
+  - 灾后 `git revert <squash-sha>` 一次撤干净,不用追溯多个 cherry-pick
+- 例外:**热修**才允许 cherry-pick 推 main,但 commit message 必须含 `hotfix:` 前缀 + 事后补 PR 把同一 commit 走流程一遍。
