@@ -39,6 +39,10 @@ var Rides = []SeedRide{
 	{"r-hengfu", "u3", "explore-yellow", 3.8, 1500, 1718330400000, "宽街收着回声,慢慢走过老城。", "#FFB54A", "上海 · 衡复风貌区", 5},
 	{"r-yangpu", "u4", "release-red", 6.7, 2400, 1718244000000, "把不安全部留在直道上,呼吸归位。", "#FF3344", "上海 · 杨浦滨江", 6},
 	{"r-houtan", "u5", "tired-gray", 5.5, 2100, 1718157600000, "做一阵没有轨迹的风,谁也不必看见。", "#C9D2D8", "上海 · 后滩公园", 5},
+	// me 自己的 3 条骑行,覆盖 3 种颜色,让 Journal / Overview / ShareCard 不空
+	{"r-me-pudong", "me", "calm-green", 5.2, 1800, 1718590200000, "陆家嘴跑桥洞,光线在水面上抖。", "#34E89E", "上海 · 陆家嘴", 4},
+	{"r-me-xuhui", "me", "lonely-blue", 3.6, 1320, 1718503800000, "雨刚停,徐汇老街只剩自行车铃。", "#4FA8FF", "上海 · 徐汇滨江", 3},
+	{"r-me-jingan", "me", "explore-yellow", 7.1, 2520, 1718244600000, "静安寺到南京西路,招牌是橙色的。", "#FFB54A", "上海 · 静安", 5},
 }
 
 // buildPhotos returns the photo rows for one ride.
