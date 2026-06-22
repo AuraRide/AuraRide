@@ -84,13 +84,62 @@ docs/  guidelines/      # 真相源文档(不动)
 
 > root `package.json` 只做 workspace 编排 + VitePress;`pnpm dev` / `pnpm build` / `pnpm typecheck` 命令仍直接在 root 跑(转发到 `@auraride/web`)。
 
-## ✍️ 提交约定
+## ✍️ 提交约定 — Trunk + Squash
 
-- 提交前确保通过验证回路。
-- commit message 用祈使句、说明"为什么";本仓库用 PR 流程合并到 `main`。
-- **禁止直接推 `main`**:任何改动(包括 fix / chore / 文档)都走 `feature-branch → PR → gh pr merge --squash` 流程。理由:
-  - main 历史保持线性 + 每个 squash commit = 一个完整 PR 描述(为什么 + 测试 + 影响面)
-  - CI 真起 gate 作用(skip 不再无所谓,deploy step 红就拦)
-  - 给 `code-review` 子代理留切入点 — 直接 push 跳过审计
-  - 灾后 `git revert <squash-sha>` 一次撤干净,不用追溯多个 cherry-pick
-- 例外:**热修**才允许 cherry-pick 推 main,但 commit message 必须含 `hotfix:` 前缀 + 事后补 PR 把同一 commit 走流程一遍。
+### 黄金分支规则
+
+- **只有一个长期分支 `main`** —— 就是 trunk
+- 一切改动都在 **短期 topic branch** 上做:`feat/...` / `fix/...` / `chore/...` / `docs/...`
+- 改完开 PR → `gh pr merge --squash --delete-branch` → 干净
+- **禁止直接 `git push origin main`**(包括 `mvp-a:main` 这种伪装)
+
+里程碑、阶段成果用 **git tag** 标定,不用长期分支:
+
+```bash
+git tag milestone/mvp-b 21b8a5c -m "下一个里程碑"
+git push origin milestone/mvp-b
+```
+
+### 为什么 squash 默认
+
+| 维度 | squash merge | merge commit / direct push |
+|---|---|---|
+| main 历史 | 1 PR = 1 commit,带完整 description | N 个 WIP commit 铺开 |
+| `git revert` | 一次撤干净 | 要追多个 cherry-pick / 易出错 |
+| `code-review` 子代理触发点 | PR diff 是天然审计边界 | 跳过审计 |
+| CI gate | red 真拦 merge | direct push 时 CI 跑了也只能事后哭 |
+| `git bisect` | commit 数少,二分快 | noise commits 多,二分迷茫 |
+
+### 例外(只两条)
+
+1. **hotfix**:线上挂掉、人在赶飞机,允许 cherry-pick 直接 push main,但 commit message **必须**含 `hotfix:` 前缀 + 事后 24h 内补一个 PR 把同一改动走流程一遍(留下审计痕迹)
+2. **多 commit 真的需要单独 revert**:用 `gh pr merge --merge`(保留 commit 节点)。极少见 —— 通常是"M 个 ADR、M 个相对独立的实现",每个值得单独 git history。需在 PR description 里**写明**为何不 squash
+
+### 标准操作流程
+
+```bash
+# 开始一个改动
+git checkout main && git pull
+git checkout -b fix/some-bug
+
+# 改 + 跑验证回路
+pnpm typecheck && pnpm build  # 或后端:go test / pytest
+
+# 提交
+git add ... && git commit -m "祈使句 + 为什么"
+git push -u origin fix/some-bug
+
+# PR + squash
+gh pr create --base main --title "..." --body "..."
+gh pr merge <num> --squash --delete-branch
+
+# 拉回 main
+git checkout main && git pull
+```
+
+### Anti-patterns(被发现就 revert)
+
+- ❌ `git push origin <branch>:main` —— 一种"用别的分支名伪装直推" 的诡技
+- ❌ `git push --force` 已合并 main(除非全员同意 + 改完 server / clone 同步)
+- ❌ `gh pr merge --merge` 当默认(squash 才是默认;`--merge` 必须 PR description 里给理由)
+- ❌ 在 main 上 `git commit` 后再 push —— 这一步本身已经错了,branch 出去重做
