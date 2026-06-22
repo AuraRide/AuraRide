@@ -128,28 +128,42 @@ gh pr merge <num> --squash --delete-branch
 
 ### 阶段 milestone 发布(mvp-a → main)
 
-每隔一段时间(陈娟设计完一组关键页 / chenzhuowen 后端完成一组功能),开 mvp-a → main PR,把累计的若干 squash commit 一次性合到 main:
+每隔一段时间(陈娟设计完一组关键页 / chenzhuowen 后端完成一组功能),开 mvp-a → main PR,**也用 `--squash`**(跟所有 PR 一样的动作,1 个 commit = 1 个可上线/可回滚单位):
 
 ```bash
+# 0. 可选:把 mvp-a 当前 HEAD 打个 tag 留细粒度历史(本周 N 个 PR 的快照)
+git tag phase/mvp-a-week-N-detail mvp-a -m "本周开发流水"
+git push origin phase/mvp-a-week-N-detail
+
+# 1. 开 milestone PR
 gh pr create --base main --head mvp-a \
   --title "release/mvp-a-week-N: 本期上线内容 ..." \
   --body "# 本次发布
   ## 包含
-  - feat: ...(#PR1)
-  - fix: ...(#PR2)
-  ...
+  - feat: ride share (#8)
+  - fix: journal empty state (#9)
+  - chore: dashscope key 接入 (#10)
   ## 验证
-  - [ ] staging 已测 N 天无回归
-  - [ ] 真线上灰度 K%"
+  - [x] staging 测了 N 天无回归
+  - [x] api healthcheck green
+  ## 回滚
+  git revert <此 squash commit sha>"
 
-# milestone merge 用 --merge(不 squash),保留 mvp-a 期间的 squash commit 节点,
-# 让 main 历史能看到"这一周做了哪些事"
-gh pr merge <num> --merge
-git tag milestone/mvp-a-week-N main
+# 2. squash merge —— 跟所有 PR 一样的动作
+gh pr merge <num> --squash
+
+# 3. milestone tag 落在 main 上(squash commit sha)
+git checkout main && git pull
+git tag milestone/mvp-a-week-N main -m "本期发布"
 git push origin milestone/mvp-a-week-N
+
+# 4. mvp-a 重新对齐 main,清空"本周流水"(细粒度在 phase/* tag 里留底)
+git checkout mvp-a
+git reset --hard main
+git push --force-with-lease origin mvp-a
 ```
 
-⚠ **mvp-a → main 是这条规则的唯一 `--merge` 用法**(其他场景全 squash)。
+**为什么 milestone 也 squash**:规则一致(每个合并 1 个动词 `--squash`)+ main 上 1 commit = 1 个可上线/可回滚单位 + PR body 完整记录本期所有 PR refs + 想看细粒度走 `phase/*` tag。**`--merge` 在本仓库工作流里彻底没用**。
 
 ### 为什么 squash 默认
 
@@ -179,7 +193,7 @@ git push origin milestone/mvp-a-week-N
 ### Anti-patterns(被发现就 revert)
 
 - ❌ `git push origin <branch>:main` 或 `<branch>:mvp-a` —— 用别的分支名伪装直推
-- ❌ `git push --force` 任何长期分支(除非全员同意 + 同步 server / 所有 clone)
+- ❌ `git push --force` 长期分支(milestone 后 mvp-a 的 `--force-with-lease` reset 是预期动作,见 milestone 流程第 4 步)
 - ❌ PR base 错(`feat/*` 应当 PR 到 `mvp-a`,只有 milestone 才 PR 到 `main`)
-- ❌ `gh pr merge --merge` 当 topic→mvp-a 的默认(squash 才是默认)
+- ❌ **任何** `gh pr merge --merge`(本仓库统一 `--squash`,**无例外**)
 - ❌ 在 main 或 mvp-a 上 `git commit` 后再 push —— 这一步本身已经错了,branch 出去重做
