@@ -34,22 +34,39 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Clone env repo for VITE_AMAP_KEY etc(若有 GH_PAT)
+      - name: Setup ENV_REPO_DEPLOY_KEY (clone AuraRide-env)
+        if: ${{ env.ENV_KEY != '' }}
+        uses: webfactory/ssh-agent@v0.9.0
+        env:
+          ENV_KEY: ${{ secrets.ENV_REPO_DEPLOY_KEY }}
+        with:
+          ssh-private-key: ${{ secrets.ENV_REPO_DEPLOY_KEY }}
+
+      - name: Clone AuraRide-env(SSH via deploy key)
         id: env_clone
         continue-on-error: true
         env:
-          GH_PAT: ${{ secrets.GH_PAT }}
+          ENV_KEY: ${{ secrets.ENV_REPO_DEPLOY_KEY }}
         run: |
-          if [ -n "$GH_PAT" ]; then
-            git clone https://x-access-token:${GH_PAT}@github.com/AuraRide/AuraRide-env.git ../AuraRide-env
-            echo "have_env=true" >> $GITHUB_OUTPUT
-          else
-            echo "::warning::GH_PAT not configured — building without env(地图 key 等会缺,但 build 不会破)"
+          if [ -z "$ENV_KEY" ]; then
+            echo "::warning::ENV_REPO_DEPLOY_KEY not configured — VITE_AMAP_KEY 等会缺,build 不破但地图不出图"
             echo "have_env=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git clone git@github.com:AuraRide/AuraRide-env.git ../AuraRide-env
+          echo "have_env=true" >> $GITHUB_OUTPUT
 
       - name: Typecheck + Build
+        env:
+          HAVE_ENV: ${{ steps.env_clone.outputs.have_env }}
         run: |
+          if [ "$HAVE_ENV" = "true" ] && [ -f ../AuraRide-env/.env.public ]; then
+            echo "▶ loading public env(VITE_AMAP_KEY etc)from AuraRide-env"
+            set -a
+            . ../AuraRide-env/.env.public
+            set +a
+          fi
           pnpm typecheck
           pnpm build
 
