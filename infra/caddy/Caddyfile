@@ -18,7 +18,17 @@
 # MVP catch-all:任何 host 上的 :80(用 IP 直接访问也走这里)
 # -----------------------------------------------------------------------------
 :80 {
-    # API 路由优先
+    # /api/healthz 特殊处理:rewrite 到 root /healthz(Go 把 healthz 放在
+    # root level 让 LB 不经过 auth middleware,见 handlers.go §Register)
+    handle /api/healthz {
+        rewrite * /healthz
+        reverse_proxy api:8080
+    }
+    handle /api/readyz {
+        rewrite * /readyz
+        reverse_proxy api:8080
+    }
+    # 其他 /api/* 保留前缀转发(Go 用 api.Group("/api") 注册所有业务路由)
     handle /api/* {
         reverse_proxy api:8080
     }

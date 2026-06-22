@@ -68,6 +68,9 @@ services:
       COS_SECRET_KEY: ${COS_SECRET_KEY:-}
       GIN_MODE: ${GIN_MODE:-release}
       PORT: "8080"
+      # 首次部署灌 demo 数据(5 用户 + 5 上海骑行 + 28 张照片占位):
+      # 单次部署传 SEED_ENABLED=true compose up -d --no-deps api,跑完一次后回 false
+      SEED_ENABLED: ${SEED_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,7 +81,9 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      # 不用 --spider(发 HEAD,gin 默认不为 GET 路由注册 HEAD → 404 unhealthy)
+      # -qO- 静默 GET,正文够小不浪费 IO
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -84,7 +84,116 @@ docs/  guidelines/      # 真相源文档(不动)
 
 > root `package.json` 只做 workspace 编排 + VitePress;`pnpm dev` / `pnpm build` / `pnpm typecheck` 命令仍直接在 root 跑(转发到 `@auraride/web`)。
 
-## ✍️ 提交约定
+## ✍️ 提交约定 — 2 长期分支(main / mvp-a)+ Squash
 
-- 提交前确保通过验证回路。
-- commit message 用祈使句、说明"为什么";本仓库用 PR 流程合并到 `main`。
+### 黄金分支规则
+
+| 分支 | 角色 | 谁能 push | merge from |
+|---|---|---|---|
+| **`main`** | 生产稳定,部署对应 `auraride.cn` / `122.51.109.165` 真线上 | 任何人(via PR + squash) | `mvp-a`(milestone 时) |
+| **`mvp-a`** | 当前阶段活跃 dev,部署 `staging.auraride.cn` / `/var/www/auraride/staging` | 任何人(via PR + squash) | topic branch |
+| `feat/*` `fix/*` `chore/*` `docs/*` | 短期 topic branch | 作者(via PR + squash 后被删除) | — |
+
+**全部改动经过:`topic branch → PR → squash merge → 删除 topic`**。**禁止直接 `git push` 任何长期分支**(main 或 mvp-a 都不行)。
+
+里程碑用 git tag,**不**用长期分支:
+
+```bash
+git tag milestone/mvp-b <sha> -m "下一阶段里程碑"
+git push origin milestone/mvp-b
+```
+
+### 日常工作流(陈娟 / chenzhuowen 都走这一套)
+
+```bash
+# 1. 同步 mvp-a
+git checkout mvp-a && git pull
+
+# 2. 开 topic branch
+git checkout -b feat/ride-detail-share
+
+# 3. 改 + 跑验证回路
+pnpm typecheck && pnpm build   # 后端:go test / uv run pytest
+
+# 4. 提交 + push
+git add ... && git commit -m "祈使句 + 为什么"
+git push -u origin feat/ride-detail-share
+
+# 5. PR → mvp-a(注意 base 是 mvp-a 不是 main)
+gh pr create --base mvp-a --title "..." --body "..."
+
+# 6. squash merge + 删 topic
+gh pr merge <num> --squash --delete-branch
+```
+
+### 阶段 milestone 发布(mvp-a → main)
+
+每隔一段时间(陈娟设计完一组关键页 / chenzhuowen 后端完成一组功能),开 mvp-a → main PR,**也用 `--squash`**(跟所有 PR 一样的动作,1 个 commit = 1 个可上线/可回滚单位):
+
+```bash
+# 0. 可选:把 mvp-a 当前 HEAD 打个 tag 留细粒度历史(本周 N 个 PR 的快照)
+git tag phase/mvp-a-week-N-detail mvp-a -m "本周开发流水"
+git push origin phase/mvp-a-week-N-detail
+
+# 1. 开 milestone PR
+gh pr create --base main --head mvp-a \
+  --title "release/mvp-a-week-N: 本期上线内容 ..." \
+  --body "# 本次发布
+  ## 包含
+  - feat: ride share (#8)
+  - fix: journal empty state (#9)
+  - chore: dashscope key 接入 (#10)
+  ## 验证
+  - [x] staging 测了 N 天无回归
+  - [x] api healthcheck green
+  ## 回滚
+  git revert <此 squash commit sha>"
+
+# 2. squash merge —— 跟所有 PR 一样的动作
+gh pr merge <num> --squash
+
+# 3. milestone tag 落在 main 上(squash commit sha)
+git checkout main && git pull
+git tag milestone/mvp-a-week-N main -m "本期发布"
+git push origin milestone/mvp-a-week-N
+
+# 4. mvp-a 重新对齐 main,清空"本周流水"(细粒度在 phase/* tag 里留底)
+git checkout mvp-a
+git reset --hard main
+git push --force-with-lease origin mvp-a
+```
+
+**为什么 milestone 也 squash**:规则一致(每个合并 1 个动词 `--squash`)+ main 上 1 commit = 1 个可上线/可回滚单位 + PR body 完整记录本期所有 PR refs + 想看细粒度走 `phase/*` tag。**`--merge` 在本仓库工作流里彻底没用**。
+
+### 为什么 squash 默认
+
+| 维度 | squash merge | merge commit / direct push |
+|---|---|---|
+| 长期分支历史 | 1 PR = 1 commit,带完整 description | N 个 WIP commit 铺开 |
+| `git revert` | 一次撤干净 | 要追多个 cherry-pick |
+| `code-review` 子代理触发点 | PR diff 是天然审计边界 | 跳过审计 |
+| CI gate | red 真拦 merge | direct push 时 CI 跑了也只能事后哭 |
+| `git bisect` | commit 数少,二分快 | noise commits 多 |
+
+### CI / 部署差异
+
+| Workflow | main 行为 | mvp-a 行为 |
+|---|---|---|
+| `web.yml` | build + 部署到 `/var/www/auraride/web`(prod) | build + 部署到 `/var/www/auraride/staging`(预览) |
+| `api.yml` | build + test + **真 deploy** | build + test only(不动生产 api) |
+| `worker.yml` | 同 api.yml | 同 api.yml |
+| `docs.yml` | 部署 GitHub Pages | 部署 GitHub Pages(覆盖 prod docs;后期可改成 PR preview) |
+
+**为什么 mvp-a 不部署 api/worker**:服务器只有一套 postgres / redis,mvp-a 部署 api/worker 会**覆盖 prod backend**,等于 mvp-a 一改后端就影响线上。等将来加 staging 数据库再开 mvp-a deploy。
+
+### 例外(就一条)
+
+**hotfix**:线上挂掉、人在赶飞机,允许 cherry-pick 直接 push main,但 commit message **必须**含 `hotfix:` 前缀 + 事后 24h 内补一个 PR(base=main)把同一改动走流程一遍(留下审计痕迹)。**hotfix 之后必须 git pull main 到 mvp-a**,让两条分支重新同步。
+
+### Anti-patterns(被发现就 revert)
+
+- ❌ `git push origin <branch>:main` 或 `<branch>:mvp-a` —— 用别的分支名伪装直推
+- ❌ `git push --force` 长期分支(milestone 后 mvp-a 的 `--force-with-lease` reset 是预期动作,见 milestone 流程第 4 步)
+- ❌ PR base 错(`feat/*` 应当 PR 到 `mvp-a`,只有 milestone 才 PR 到 `main`)
+- ❌ **任何** `gh pr merge --merge`(本仓库统一 `--squash`,**无例外**)
+- ❌ 在 main 或 mvp-a 上 `git commit` 后再 push —— 这一步本身已经错了,branch 出去重做
