@@ -10,4 +10,5 @@ deploy/
 *.log
 *.env
 .env.*
-README.md
+# 不能排除 README.md —— pyproject.toml [project].readme 指向它,
+# hatchling 在 editable build 时会读它的内容做 metadata 校验

@@ -13,17 +13,16 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 WORKDIR /app
 
-# 先拷锁文件 + pyproject,利用 layer 缓存(deps 不变 → 不重装)
-COPY pyproject.toml uv.lock ./
-
 # 镜像加速:清华 pypi
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 装 deps(--no-dev 跳过 pytest/ruff,运行时不需要)
-RUN uv sync --frozen --no-dev
-
-# 拷源码
+# COPY 所有源码 + 配置(包括 src,这样 editable install 能正确指向 src/auraride_worker)
+# 牺牲一点 layer 缓存(src 变了 deps 会重装),换 editable install 正确性
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+
+# 装 deps + editable install 本地包(--no-dev 跳过 pytest/ruff)
+RUN uv sync --frozen --no-dev
 
 # 非 root 用户
 RUN useradd --create-home --shell /bin/bash app && \
