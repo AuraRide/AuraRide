@@ -235,10 +235,11 @@ export default function RouteGeneration() {
 
     try {
       // 只看选中路线 + start;底部 panel 实际 ~280px,padding 留点冗余
-      map.setFitView(fitTargets.length ? fitTargets : overlaysRef.current, false, [60, 30, 290, 30]);
+      // immediate=true:跳到目标 zoom 不动画,这样下面 getZoom() 才拿得到 final 值
+      map.setFitView(fitTargets.length ? fitTargets : overlaysRef.current, true, [60, 30, 290, 30]);
       // clamp zoom:13 以下是城市级别(看不清街道),17 以上太局部
       const z = map.getZoom();
-      if (z < 13) map.setZoom(13);
+      if (z < 14) map.setZoom(14);
       else if (z > 17) map.setZoom(17);
     } catch {
       /* ignore */
