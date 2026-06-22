@@ -39,7 +39,8 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mvp-a'
+    # 只有 main 部署 prod worker;mvp-a push 只跑 test/lint(避免覆盖生产后端)
+    if: github.ref == 'refs/heads/main'
     continue-on-error: true
     steps:
       - name: Check SSH secrets

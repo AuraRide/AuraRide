@@ -42,7 +42,8 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mvp-a'
+    # 只有 main 部署 prod api;mvp-a push 只跑 build/test(避免覆盖生产后端)
+    if: github.ref == 'refs/heads/main'
     continue-on-error: true # 服务器未 ready / SSH key 未配时不阻塞 CI
     steps:
       - name: Check SSH secrets configured

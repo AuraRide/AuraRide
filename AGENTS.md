@@ -84,62 +84,102 @@ docs/  guidelines/      # 真相源文档(不动)
 
 > root `package.json` 只做 workspace 编排 + VitePress;`pnpm dev` / `pnpm build` / `pnpm typecheck` 命令仍直接在 root 跑(转发到 `@auraride/web`)。
 
-## ✍️ 提交约定 — Trunk + Squash
+## ✍️ 提交约定 — 2 长期分支(main / mvp-a)+ Squash
 
 ### 黄金分支规则
 
-- **只有一个长期分支 `main`** —— 就是 trunk
-- 一切改动都在 **短期 topic branch** 上做:`feat/...` / `fix/...` / `chore/...` / `docs/...`
-- 改完开 PR → `gh pr merge --squash --delete-branch` → 干净
-- **禁止直接 `git push origin main`**(包括 `mvp-a:main` 这种伪装)
+| 分支 | 角色 | 谁能 push | merge from |
+|---|---|---|---|
+| **`main`** | 生产稳定,部署对应 `auraride.cn` / `122.51.109.165` 真线上 | 任何人(via PR + squash) | `mvp-a`(milestone 时) |
+| **`mvp-a`** | 当前阶段活跃 dev,部署 `staging.auraride.cn` / `/var/www/auraride/staging` | 任何人(via PR + squash) | topic branch |
+| `feat/*` `fix/*` `chore/*` `docs/*` | 短期 topic branch | 作者(via PR + squash 后被删除) | — |
 
-里程碑、阶段成果用 **git tag** 标定,不用长期分支:
+**全部改动经过:`topic branch → PR → squash merge → 删除 topic`**。**禁止直接 `git push` 任何长期分支**(main 或 mvp-a 都不行)。
+
+里程碑用 git tag,**不**用长期分支:
 
 ```bash
-git tag milestone/mvp-b 21b8a5c -m "下一个里程碑"
+git tag milestone/mvp-b <sha> -m "下一阶段里程碑"
 git push origin milestone/mvp-b
 ```
+
+### 日常工作流(陈娟 / chenzhuowen 都走这一套)
+
+```bash
+# 1. 同步 mvp-a
+git checkout mvp-a && git pull
+
+# 2. 开 topic branch
+git checkout -b feat/ride-detail-share
+
+# 3. 改 + 跑验证回路
+pnpm typecheck && pnpm build   # 后端:go test / uv run pytest
+
+# 4. 提交 + push
+git add ... && git commit -m "祈使句 + 为什么"
+git push -u origin feat/ride-detail-share
+
+# 5. PR → mvp-a(注意 base 是 mvp-a 不是 main)
+gh pr create --base mvp-a --title "..." --body "..."
+
+# 6. squash merge + 删 topic
+gh pr merge <num> --squash --delete-branch
+```
+
+### 阶段 milestone 发布(mvp-a → main)
+
+每隔一段时间(陈娟设计完一组关键页 / chenzhuowen 后端完成一组功能),开 mvp-a → main PR,把累计的若干 squash commit 一次性合到 main:
+
+```bash
+gh pr create --base main --head mvp-a \
+  --title "release/mvp-a-week-N: 本期上线内容 ..." \
+  --body "# 本次发布
+  ## 包含
+  - feat: ...(#PR1)
+  - fix: ...(#PR2)
+  ...
+  ## 验证
+  - [ ] staging 已测 N 天无回归
+  - [ ] 真线上灰度 K%"
+
+# milestone merge 用 --merge(不 squash),保留 mvp-a 期间的 squash commit 节点,
+# 让 main 历史能看到"这一周做了哪些事"
+gh pr merge <num> --merge
+git tag milestone/mvp-a-week-N main
+git push origin milestone/mvp-a-week-N
+```
+
+⚠ **mvp-a → main 是这条规则的唯一 `--merge` 用法**(其他场景全 squash)。
 
 ### 为什么 squash 默认
 
 | 维度 | squash merge | merge commit / direct push |
 |---|---|---|
-| main 历史 | 1 PR = 1 commit,带完整 description | N 个 WIP commit 铺开 |
-| `git revert` | 一次撤干净 | 要追多个 cherry-pick / 易出错 |
+| 长期分支历史 | 1 PR = 1 commit,带完整 description | N 个 WIP commit 铺开 |
+| `git revert` | 一次撤干净 | 要追多个 cherry-pick |
 | `code-review` 子代理触发点 | PR diff 是天然审计边界 | 跳过审计 |
 | CI gate | red 真拦 merge | direct push 时 CI 跑了也只能事后哭 |
-| `git bisect` | commit 数少,二分快 | noise commits 多,二分迷茫 |
+| `git bisect` | commit 数少,二分快 | noise commits 多 |
 
-### 例外(只两条)
+### CI / 部署差异
 
-1. **hotfix**:线上挂掉、人在赶飞机,允许 cherry-pick 直接 push main,但 commit message **必须**含 `hotfix:` 前缀 + 事后 24h 内补一个 PR 把同一改动走流程一遍(留下审计痕迹)
-2. **多 commit 真的需要单独 revert**:用 `gh pr merge --merge`(保留 commit 节点)。极少见 —— 通常是"M 个 ADR、M 个相对独立的实现",每个值得单独 git history。需在 PR description 里**写明**为何不 squash
+| Workflow | main 行为 | mvp-a 行为 |
+|---|---|---|
+| `web.yml` | build + 部署到 `/var/www/auraride/web`(prod) | build + 部署到 `/var/www/auraride/staging`(预览) |
+| `api.yml` | build + test + **真 deploy** | build + test only(不动生产 api) |
+| `worker.yml` | 同 api.yml | 同 api.yml |
+| `docs.yml` | 部署 GitHub Pages | 部署 GitHub Pages(覆盖 prod docs;后期可改成 PR preview) |
 
-### 标准操作流程
+**为什么 mvp-a 不部署 api/worker**:服务器只有一套 postgres / redis,mvp-a 部署 api/worker 会**覆盖 prod backend**,等于 mvp-a 一改后端就影响线上。等将来加 staging 数据库再开 mvp-a deploy。
 
-```bash
-# 开始一个改动
-git checkout main && git pull
-git checkout -b fix/some-bug
+### 例外(就一条)
 
-# 改 + 跑验证回路
-pnpm typecheck && pnpm build  # 或后端:go test / pytest
-
-# 提交
-git add ... && git commit -m "祈使句 + 为什么"
-git push -u origin fix/some-bug
-
-# PR + squash
-gh pr create --base main --title "..." --body "..."
-gh pr merge <num> --squash --delete-branch
-
-# 拉回 main
-git checkout main && git pull
-```
+**hotfix**:线上挂掉、人在赶飞机,允许 cherry-pick 直接 push main,但 commit message **必须**含 `hotfix:` 前缀 + 事后 24h 内补一个 PR(base=main)把同一改动走流程一遍(留下审计痕迹)。**hotfix 之后必须 git pull main 到 mvp-a**,让两条分支重新同步。
 
 ### Anti-patterns(被发现就 revert)
 
-- ❌ `git push origin <branch>:main` —— 一种"用别的分支名伪装直推" 的诡技
-- ❌ `git push --force` 已合并 main(除非全员同意 + 改完 server / clone 同步)
-- ❌ `gh pr merge --merge` 当默认(squash 才是默认;`--merge` 必须 PR description 里给理由)
-- ❌ 在 main 上 `git commit` 后再 push —— 这一步本身已经错了,branch 出去重做
+- ❌ `git push origin <branch>:main` 或 `<branch>:mvp-a` —— 用别的分支名伪装直推
+- ❌ `git push --force` 任何长期分支(除非全员同意 + 同步 server / 所有 clone)
+- ❌ PR base 错(`feat/*` 应当 PR 到 `mvp-a`,只有 milestone 才 PR 到 `main`)
+- ❌ `gh pr merge --merge` 当 topic→mvp-a 的默认(squash 才是默认)
+- ❌ 在 main 或 mvp-a 上 `git commit` 后再 push —— 这一步本身已经错了,branch 出去重做
