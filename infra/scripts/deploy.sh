@@ -42,30 +42,46 @@ git fetch --quiet origin
 git checkout "$DEPLOY_BRANCH" 2>/dev/null || true
 git reset --hard "origin/$DEPLOY_BRANCH"
 
-echo "▶ git pull env 仓库"
-git -C "$ENV_DIR" pull --ff-only --quiet || {
-    echo "⚠ env 仓库 pull 失败,沿用现有 .env(可能 PAT 过期)" >&2
-}
+if [ -d "$ENV_DIR/.git" ]; then
+    echo "▶ git pull env 仓库"
+    git -C "$ENV_DIR" pull --ff-only --quiet 2>&1 || \
+        echo "⚠ env 仓库 pull 失败(可能 PAT 过期),沿用现有 .env"
+fi
+
+# dotenvx 可选:装了 + .env.keys 在位才注入真密钥;否则用 compose 默认值
+# (MVP 阶段都是 compose 默认 dev 密码,等需要真 COS / DashScope 时
+# scp .env.keys + apt 装 dotenvx 即可激活)
+if command -v dotenvx >/dev/null 2>&1 && [ -f "$ENV_DIR/.env.keys" ]; then
+    DOTENVX_WRAP=(dotenvx run -f "$ENV_FILE" --)
+    echo "▶ dotenvx detected — 注入真密钥"
+else
+    DOTENVX_WRAP=()
+    echo "⚠ dotenvx 未装或 .env.keys 缺失 — 用 docker compose 默认值(dev 密码)"
+fi
+
+# WEB_DIST_DIR 让 caddy bind mount 指向生产 dist 路径
+export WEB_DIST_DIR="${WEB_DIST_DIR:-/var/www/auraride/web}"
+
+# compose 命令前缀,统一两个 -f
+COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
 
 case "$SERVICE" in
     api|worker)
         echo "▶ docker compose build $SERVICE"
-        dotenvx run -f "$ENV_FILE" -- \
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml build "$SERVICE"
+        "${DOTENVX_WRAP[@]}" "${COMPOSE[@]}" build "$SERVICE"
 
         echo "▶ docker compose up -d --no-deps $SERVICE"
-        dotenvx run -f "$ENV_FILE" -- \
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps "$SERVICE"
+        "${DOTENVX_WRAP[@]}" "${COMPOSE[@]}" up -d --no-deps "$SERVICE"
 
         echo "▶ 健康检查"
         sleep 3
         if [ "$SERVICE" = "api" ]; then
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api \
-                wget --quiet --tries=1 --spider http://localhost:8080/healthz \
+            "${COMPOSE[@]}" exec -T api \
+                wget -qO- http://localhost:8080/healthz \
                 && echo "✅ api healthy" \
                 || { echo "❌ api 不健康" >&2; exit 1; }
         else
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml ps "$SERVICE" \
+            "${COMPOSE[@]}" ps "$SERVICE" \
                 | grep -q "Up\|running" \
                 && echo "✅ $SERVICE running" \
                 || { echo "❌ $SERVICE 没起来" >&2; exit 1; }
