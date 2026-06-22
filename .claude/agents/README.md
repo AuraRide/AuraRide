@@ -6,8 +6,11 @@
 
 | 名字 | 用途 | 何时主动用 |
 | --- | --- | --- |
-| `color-manifesto-guard` | 审计 diff 是否破坏 `docs/产品/一切皆颜色.md` §7 的 9 条工程不变量 | 任何动 `src/app/lib/moodColor.ts`、`src/app/lib/colorEngines/**` 或新增"染色"路径的 PR,合并前都应跑一次 |
-| `design-page-reviewer` | 按 `guidelines/Guidelines.md` + manifesto §5 审视一个新页面 | 新增或大改 `src/app/pages/` 下任一文件后 |
+| `color-manifesto-guard` | 审计 diff 是否破坏 `docs/产品/一切皆颜色.md` §7 的 9 条工程不变量 | 任何动 `apps/web/src/app/lib/moodColor.ts`、`apps/web/src/app/lib/colorEngines/**` 或新增"染色"路径的 PR,合并前都应跑一次 |
+| `design-page-reviewer` | 按 `guidelines/Guidelines.md` + manifesto §5 审视一个新页面 | 新增或大改 `apps/web/src/app/pages/` 下任一文件后 |
+| `deploy` | ssh 服务器跑 `/opt/auraride/infra/scripts/deploy.sh <service>` + healthcheck + 状态报告 | "deploy"/"上线"/"推 api"/"重启 worker"/"更新生产" |
+| `code-review` | 按 AGENTS.md 黄金法则 + manifesto + Guidelines 审 diff;沾页面/颜色时委托对应子代理;Read-only | "code review"/"审一下这次改动"/"check my PR"/squash 前 |
+| `server-doctor` | ssh 服务器跑容器/健康/资源/日志体检,产出结构化报告;**只读**,不重启不修复 | "线上挂了吗"/"服务器怎么样"/"看下日志"/"api 不响应" |
 
 ## 怎么调用
 

@@ -1,0 +1,110 @@
+name: Web Build & Deploy
+
+on:
+  push:
+    branches: [main, mvp-a]
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Clone env repo for VITE_AMAP_KEY etc(若有 GH_PAT)
+        id: env_clone
+        continue-on-error: true
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -n "$GH_PAT" ]; then
+            git clone https://x-access-token:${GH_PAT}@github.com/AuraRide/AuraRide-env.git ../AuraRide-env
+            echo "have_env=true" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::GH_PAT not configured — building without env(地图 key 等会缺,但 build 不会破)"
+            echo "have_env=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Typecheck + Build
+        run: |
+          pnpm typecheck
+          pnpm build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: auraride-web-${{ github.sha }}
+          path: apps/web/dist
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mvp-a'
+    continue-on-error: true
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: auraride-web-${{ github.sha }}
+          path: ./dist
+
+      - name: Check SSH
+        id: precheck
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_SSH_HOST" ]; then
+            echo "::warning::DEPLOY_SSH_KEY / DEPLOY_SSH_HOST not configured — skipping web deploy"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup SSH
+        if: steps.precheck.outputs.skip != 'true'
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: rsync dist → caddy 静态目录
+        if: steps.precheck.outputs.skip != 'true'
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          ssh-keyscan -H "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts
+          # main → /var/www/auraride/web ; mvp-a → /var/www/auraride/staging
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            DEST="/var/www/auraride/web"
+          else
+            DEST="/var/www/auraride/staging"
+          fi
+          rsync -avz --delete dist/ deploy@"$DEPLOY_SSH_HOST":"$DEST"/
+          # caddy 在 docker 里,bind mount 自这个 host 目录,SPA 文件变化无需 reload
+          # 触发服务器 git pull(让仓库其他 infra 文件也跟着新)
+          ssh deploy@"$DEPLOY_SSH_HOST" '/opt/auraride/infra/scripts/deploy.sh web'

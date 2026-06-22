@@ -31,5 +31,9 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Playwright MCP local artifacts(截图、snapshot — debug 用,不进 main)
+.playwright-mcp/
+prod-*.png
+
 # Misc
 *.zip

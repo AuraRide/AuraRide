@@ -47,21 +47,29 @@ pnpm preview
 | `/watch` | WatchRiding | 手表骑行 |
 | `/journal` | Journal | 骑行日记 |
 
-## 目录结构
+## 目录结构（monorepo, ADR-004）
 
 ```
-src/
-├── app/
-│   ├── App.tsx          # 根组件（MobileOnly + 路由）
-│   ├── routes.tsx       # 路由表
-│   ├── pages/           # 14 个页面
-│   ├── components/       # 业务组件 + shadcn/ui 组件库
-│   ├── data/            # 静态数据
-│   ├── lib/ · utils/    # 工具函数
-├── imports/             # Figma 导出的图片资源
-├── styles/              # 全局样式 / 主题 / 字体
-└── main.tsx             # 应用入口
+apps/web/                # ⭐ 当前 MVP 战场（React + Vite）
+└── src/
+    ├── app/
+    │   ├── App.tsx          # 根组件（MobileOnly + 路由）
+    │   ├── routes.tsx       # 路由表
+    │   ├── pages/           # 14 个页面
+    │   ├── components/      # 业务组件 + shadcn/ui 组件库
+    │   ├── data/            # 静态数据
+    │   ├── lib/ · utils/    # 工具函数
+    ├── imports/             # Figma 导出的图片资源
+    ├── styles/              # 全局样式 / 主题 / 字体
+    └── main.tsx             # 应用入口
+
+apps/{ios,api,worker}/   # ⏳ 占位（详见各目录 README）
+packages/types/          # ⏳ 共享 TS 类型（等 Go API 启动）
+infra/                   # 部署 / 运维（Caddy / systemd / scripts）
+docs/                    # VitePress 文档站
 ```
+
+> `pnpm dev` / `pnpm build` / `pnpm typecheck` 仍在 root 跑，root `package.json` 转发到 `@auraride/web`。
 
 ## 协作约定
 
