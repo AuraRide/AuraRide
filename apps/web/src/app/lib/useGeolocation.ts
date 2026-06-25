@@ -29,6 +29,8 @@ export interface GeolocationState {
   accuracy: number | null; // meters
   lat: number | null;
   lng: number | null;
+  climbM: number; // cumulative positive elevation gain (m)
+  hasAltitude: boolean; // device actually reported altitude (else climb is "—")
   error: string | null;
 }
 
@@ -61,6 +63,8 @@ const INITIAL: GeolocationState = {
   accuracy: null,
   lat: null,
   lng: null,
+  climbM: 0,
+  hasAltitude: false,
   error: null,
 };
 
@@ -73,6 +77,9 @@ export function useGeolocation({ paused = false, enabled = true }: Options = {})
   const lastRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
   const distMetersRef = useRef(0);
   const smoothSpeedRef = useRef(0);
+  const lastAltRef = useRef<number | null>(null);
+  const climbRef = useRef(0);
+  const hasAltRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -84,8 +91,18 @@ export function useGeolocation({ paused = false, enabled = true }: Options = {})
     setState((s) => ({ ...s, status: "locating" }));
 
     const onPosition = (pos: GeolocationPosition) => {
-      const { latitude, longitude, accuracy, speed } = pos.coords;
+      const { latitude, longitude, accuracy, speed, altitude } = pos.coords;
       const t = pos.timestamp;
+
+      // Cumulative climb from device altitude (when the hardware reports it).
+      if (altitude != null && Number.isFinite(altitude)) {
+        hasAltRef.current = true;
+        if (lastAltRef.current != null) {
+          const dAlt = altitude - lastAltRef.current;
+          if (dAlt > 1 && !pausedRef.current) climbRef.current += dAlt; // >1m filters noise
+        }
+        lastAltRef.current = altitude;
+      }
 
       // Reject very imprecise fixes outright (common indoors / cold start).
       if (accuracy != null && accuracy > 50) {
@@ -133,6 +150,8 @@ export function useGeolocation({ paused = false, enabled = true }: Options = {})
         accuracy: accuracy ?? null,
         lat: latitude,
         lng: longitude,
+        climbM: climbRef.current,
+        hasAltitude: hasAltRef.current,
         error: null,
       });
     };

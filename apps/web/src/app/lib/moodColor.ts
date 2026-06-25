@@ -23,7 +23,11 @@ export interface ColorProfile {
   hex: string;
   /** two-stop gradient for orbs / backgrounds */
   gradient: [string, string];
-  /** poetic one-liner shown on the reveal screen */
+  /** the real city environment this colour lives in, e.g. 树荫与公园 */
+  place: string;
+  /** the honest feeling that place gives you, e.g. 恢复 · 松弛 (a consequence, not a label) */
+  feel: string;
+  /** one-liner shown on the reveal / start screen — framed as environment + feeling */
   line: string;
   /** keywords that pull a sentence toward this color */
   keywords: string[];
@@ -32,11 +36,13 @@ export interface ColorProfile {
 export const COLOR_PROFILES: Record<ColorId, ColorProfile> = {
   "release-red": {
     id: "release-red",
-    en: "EMBER",
-    cn: "余火",
+    en: "SCARLET",
+    cn: "赤红",
     hex: "#FF3344",
     gradient: ["#FF6A5E", "#FF1E3C"],
-    line: "撕开风阻，让不安在直道上彻底燃尽。",
+    place: "活力闹市",
+    feel: "兴奋 · 释放",
+    line: "冲进烟火气的闹市，把不安甩在身后。",
     keywords: [
       "烦", "气", "愤怒", "生气", "压力", "崩溃", "焦虑", "暴躁", "发泄",
       "释放", "燃", "爆发", "冲", "不爽", "火大", "急躁", "想骂", "受够",
@@ -45,11 +51,13 @@ export const COLOR_PROFILES: Record<ColorId, ColorProfile> = {
   },
   "lonely-blue": {
     id: "lonely-blue",
-    en: "DEPTH",
-    cn: "深蓝",
+    en: "TIDE",
+    cn: "水蓝",
     hex: "#4FA8FF",
     gradient: ["#5FB8FF", "#1E5FC8"],
-    line: "潜入暗流，把喧嚣沉降于底面。",
+    place: "开阔水岸",
+    feel: "平静 · 开阔",
+    line: "沿着开阔的水岸独行，把喧嚣沉到水底。",
     keywords: [
       "孤独", "孤单", "难过", "想哭", "失落", "低落", "emo", "一个人", "静静",
       "沉", "思念", "想念", "伤心", "委屈", "空落", "忧郁", "寂寞", "想静",
@@ -58,11 +66,13 @@ export const COLOR_PROFILES: Record<ColorId, ColorProfile> = {
   },
   "calm-green": {
     id: "calm-green",
-    en: "MOSS",
-    cn: "暗绿",
+    en: "GROVE",
+    cn: "林绿",
     hex: "#34E89E",
     gradient: ["#5BF0B0", "#16B57E"],
-    line: "顺应风向，把心跳交还给潮汐。",
+    place: "树荫与公园",
+    feel: "恢复 · 松弛",
+    line: "穿过城市的树荫与公园，让心跳慢下来。",
     keywords: [
       "平静", "放松", "治愈", "舒服", "安心", "慢", "休息", "恢复", "温柔",
       "自在", "松弛", "惬意", "平和", "轻松", "安稳", "放空一下", "深呼吸",
@@ -71,11 +81,13 @@ export const COLOR_PROFILES: Record<ColorId, ColorProfile> = {
   },
   "explore-yellow": {
     id: "explore-yellow",
-    en: "TRACE",
-    cn: "赭黄",
+    en: "AMBER",
+    cn: "暖黄",
     hex: "#FFB54A",
     gradient: ["#FFD27A", "#FF9A2E"],
-    line: "从容探索街区肌理，收集长长的回声。",
+    place: "老城街巷",
+    feel: "探索 · 怀旧",
+    line: "钻进老城的暖光街巷，收集长长的回声。",
     keywords: [
       "好奇", "探索", "出门", "新鲜", "阳光", "期待", "发现", "走走", "活力",
       "兴奋", "开心", "想出去", "元气", "好天气", "出去玩", "想动", "雀跃",
@@ -84,11 +96,13 @@ export const COLOR_PROFILES: Record<ColorId, ColorProfile> = {
   },
   "tired-gray": {
     id: "tired-gray",
-    en: "VOID",
-    cn: "灰白",
+    en: "HAZE",
+    cn: "雾灰",
     hex: "#C9D2D8",
     gradient: ["#DDE4E9", "#9AA6AE"],
-    line: "隐入网格，做一阵没有轨迹的风。",
+    place: "通勤网格",
+    feel: "平淡 · 随意",
+    line: "汇入城市的网格街道，做一阵没有轨迹的风。",
     keywords: [
       "累", "麻木", "空", "没感觉", "无聊", "平淡", "想消失", "放空", "疲惫",
       "提不起劲", "无所谓", "没意思", "倦", "木", "无力", "失眠", "撑", "耗",
@@ -116,7 +130,10 @@ export interface MoodResult {
 /**
  * Derive the best-fitting emotion color from a free-form mood sentence.
  * Longer keyword matches weigh slightly more (more specific = stronger signal).
- * On no signal, falls back to VOID (灰白) — "a wind with no trajectory".
+ * On no signal, falls back to TRACE (赭黄) — the neutral "exploration" mood that
+ * the entry screen is themed around — rather than the bleak VOID, so an
+ * unrecognized sentence doesn't make the whole ride turn grey. (VOID is still
+ * reachable directly through its own keywords: 累 / 麻木 / 空 …)
  */
 export function analyzeMood(text: string): MoodResult {
   const normalized = (text || "").toLowerCase();
@@ -143,7 +160,7 @@ export function analyzeMood(text: string): MoodResult {
     }
   }
 
-  let colorId: ColorId = "tired-gray";
+  let colorId: ColorId = "explore-yellow";
   let bestScore = 0;
   for (const id of COLOR_ORDER) {
     if (scores[id] > bestScore) {

@@ -23,6 +23,19 @@ import {
   type CtaColor,
 } from "../../components/pixelKit";
 import SceneTitle from "./SceneTitle";
+import { type ColorId } from "../../lib/moodColor";
+import { setAccount } from "../../lib/session";
+
+// scene colour (CtaColor) → emotion colourId. The ride flow is now COLOUR-FIRST:
+// the scene you're looking at IS your colour, and 开始骑行 takes that colour
+// straight to route planning (no mood sentence / scene-state detour).
+const CTA_TO_COLORID: Record<CtaColor, ColorId> = {
+  yellow: "explore-yellow",
+  blue: "lonely-blue",
+  green: "calm-green",
+  red: "release-red",
+  gray: "tired-gray",
+};
 
 function BikeGlyph({ size = 26, stroke = "#fff" }: { size?: number; stroke?: string }) {
   return (
@@ -34,53 +47,47 @@ function BikeGlyph({ size = 26, stroke = "#fff" }: { size?: number; stroke?: str
   );
 }
 
-export default function StartUI({ color, t, onEnter }: { color: CtaColor; t: number; onEnter: (reason: "ride" | "auth") => void }) {
+// mode "start" = the 出发 tab (scene + 就这样出发, rider fully visible, no auth
+// buttons). mode "auth" = the standalone 登录/注册 page reached from a personal
+// tab's profile header; it opens the auth card over the scene and returns on done.
+export default function StartUI({ color, t, mode = "start" }: { color: CtaColor; t: number; mode?: "start" | "auth" }) {
   const navigate = useNavigate();
   const c = CTA_COLORS[color] || CTA_COLORS.yellow;
-  const [sheet, setSheet] = React.useState<null | "login" | "register">(null);
+  const [sheet, setSheet] = React.useState<null | "login" | "register">(mode === "auth" ? "login" : null);
   const [phone, setPhone] = React.useState("");
   const [pwd, setPwd] = React.useState("");
   const [pwd2, setPwd2] = React.useState("");
   const [done, setDone] = React.useState(false);
 
-  const open = (mode: "login" | "register") => {
-    setSheet(mode);
-    setDone(false);
+  // closing the auth card: on the dedicated /login page, go back where we came
+  // from; otherwise just dismiss the overlay.
+  const closeSheet = () => {
+    if (mode === "auth") navigate(-1);
+    else setSheet(null);
   };
+  // After login/register persist the account, then land on 颜色记忆 (auth page) or
+  // simply close and stay on the 出发 scene.
   const submit = () => {
     setDone(true);
+    setAccount(phone.trim() || "骑行者");
     setTimeout(() => {
-      setSheet(null);
-      setDone(false);
-      onEnter("auth");
+      if (mode === "auth") navigate("/colors", { replace: true });
+      else {
+        setSheet(null);
+        setDone(false);
+      }
     }, 1400);
   };
-
-  const cornerChip: React.CSSProperties = {
-    position: "absolute",
-    top: "calc(env(safe-area-inset-top, 0px) + 18px)",
-    zIndex: 25,
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "8px 13px",
-    cursor: "pointer",
-    border: "none",
-    fontFamily: PIXEL_FONT,
-    fontSize: 13,
-    fontWeight: 800,
-    letterSpacing: 2,
-    color: INK,
-    background: PAPER,
-    clipPath: STAIR,
-    boxShadow: "inset 0 0 0 2px " + PIXEL_OUT,
+  // 开始骑行 — colour-first: take the current scene's colour straight to route
+  // planning. The carousel (swipe / dots) is the colour picker.
+  const startRide = () => {
+    navigate("/generate", { state: { colorId: CTA_TO_COLORID[color] || "explore-yellow" } });
   };
 
   return (
     <React.Fragment>
-      {/* corner entries to my-stuff / community */}
-      <button onClick={() => navigate("/journal")} style={{ ...cornerChip, left: 18 }}>旅程</button>
-      <button onClick={() => navigate("/discover")} style={{ ...cornerChip, right: 18 }}>广场</button>
+      {/* nav now lives in the bottom tab bar; colour is implied only by the tinted
+          opening scene (never named in the UI). */}
 
       {/* title — top, responsive width, never cropped (flex-centred so framer's
           transform animation doesn't clobber the centering) */}
@@ -89,7 +96,7 @@ export default function StartUI({ color, t, onEnter }: { color: CtaColor; t: num
           position: "absolute",
           left: 0,
           right: 0,
-          top: "calc(env(safe-area-inset-top, 0px) + 12%)",
+          top: "calc(env(safe-area-inset-top, 0px) + 17%)",
           display: "flex",
           justifyContent: "center",
           zIndex: 20,
@@ -98,7 +105,7 @@ export default function StartUI({ color, t, onEnter }: { color: CtaColor; t: num
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
-        <div style={{ width: "min(84vw, 430px)" }}>
+        <div style={{ width: "min(63vw, 320px)" }}>
           <SceneTitle color={color} t={t} />
         </div>
       </motion.div>
@@ -117,50 +124,43 @@ export default function StartUI({ color, t, onEnter }: { color: CtaColor; t: num
         }}
       />
 
-      {/* CTA cluster — bottom, real px */}
-      <motion.div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: "calc(env(safe-area-inset-bottom, 0px) + 26px)",
-          padding: "0 24px",
-          maxWidth: 440,
-          margin: "0 auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-          zIndex: 20,
-        }}
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.55, delay: 0.15 }}
-      >
-        <PixelButton onClick={() => onEnter("ride")} fill={c.fill} text={c.text} height={62} fontSize={21} fontWeight={800} letter={5}>
-          <BikeGlyph stroke={c.text} />
-          开始骑行
-        </PixelButton>
-        <div style={{ display: "flex", gap: 14 }}>
-          <PixelButton onClick={() => open("login")} flex={1} fill="#f6efdf" text={c.ink} height={50} fontSize={17} fontWeight={700} letter={3}>
-            登录
+      {/* CTA — only the 出发 action, sat just above the bottom tab bar so the
+          rider in the scene stays fully visible (登录/注册 now lives on the
+          personal tabs). Hidden on the dedicated /login page. */}
+      {mode === "start" && (
+        <motion.div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 74px)",
+            padding: "0 24px",
+            maxWidth: 440,
+            margin: "0 auto",
+            zIndex: 20,
+          }}
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.15 }}
+        >
+          <PixelButton onClick={startRide} fill={c.fill} text={c.text} height={60} fontSize={21} fontWeight={800} letter={5}>
+            <BikeGlyph stroke={c.text} />
+            就这样出发
           </PixelButton>
-          <PixelButton onClick={() => open("register")} flex={1} fill="#f6efdf" text={c.ink} height={50} fontSize={17} fontWeight={700} letter={3}>
-            注册
-          </PixelButton>
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
 
       {/* auth — centered modal */}
       {sheet && (
         <div style={{ position: "absolute", inset: 0, zIndex: 60, fontFamily: PIXEL_FONT }}>
-          <div onClick={() => setSheet(null)} style={{ position: "absolute", inset: 0, background: "rgba(20,16,8,0.5)" }} />
+          <div onClick={closeSheet} style={{ position: "absolute", inset: 0, background: "rgba(20,16,8,0.5)" }} />
           <div
             className="pixel-pop"
             style={{
               position: "absolute",
               left: "50%",
               top: "50%",
-              width: "min(86vw, 360px)",
+              width: "min(76%, 310px)",
               background: PAPER,
               clipPath: STAIR,
               padding: "22px 22px 24px",
@@ -191,7 +191,7 @@ export default function StartUI({ color, t, onEnter }: { color: CtaColor; t: num
             ) : (
               <React.Fragment>
                 {/* close */}
-                <button onClick={() => setSheet(null)} style={{ position: "absolute", top: 12, right: 12, width: 30, height: 30, display: "grid", placeItems: "center", background: "none", border: "none", cursor: "pointer", color: INK_FAINT }}>
+                <button onClick={closeSheet} style={{ position: "absolute", top: 12, right: 12, width: 30, height: 30, display: "grid", placeItems: "center", background: "none", border: "none", cursor: "pointer", color: INK_FAINT }}>
                   <X size={18} />
                 </button>
 

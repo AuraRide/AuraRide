@@ -17,6 +17,8 @@ import {
   FeedFilter,
   PublishOptions,
   RideRecord,
+  Comment,
+  SavedRoute,
   localRepo,
 } from "./rideRepo";
 
@@ -167,6 +169,75 @@ export const apiRepo: RideRepo = {
     } catch (e) {
       warn("toggleLike", e);
       return localRepo.toggleLike(postId);
+    }
+  },
+
+  async listComments(postId) {
+    try {
+      return await jsonFetch<Comment[]>(url(`/api/posts/${encodeURIComponent(postId)}/comments`));
+    } catch (e) {
+      warn("listComments", e);
+      return localRepo.listComments(postId);
+    }
+  },
+
+  async addComment(postId, text) {
+    try {
+      return await jsonFetch<Comment>(url(`/api/posts/${encodeURIComponent(postId)}/comments`), {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      });
+    } catch (e) {
+      warn("addComment", e);
+      return localRepo.addComment(postId, text);
+    }
+  },
+
+  async commentCounts() {
+    try {
+      return await jsonFetch<Record<string, number>>(url("/api/posts/comment-counts"));
+    } catch (e) {
+      warn("commentCounts", e);
+      return localRepo.commentCounts();
+    }
+  },
+
+  async listSavedRoutes() {
+    try {
+      return await jsonFetch<SavedRoute[]>(url("/api/saved-routes"));
+    } catch (e) {
+      warn("listSavedRoutes", e);
+      return localRepo.listSavedRoutes();
+    }
+  },
+
+  async saveRouteFromPost(post) {
+    try {
+      return await jsonFetch<SavedRoute>(url("/api/saved-routes"), {
+        method: "POST",
+        body: JSON.stringify({ postId: post.id }),
+      });
+    } catch (e) {
+      warn("saveRouteFromPost", e);
+      return localRepo.saveRouteFromPost(post);
+    }
+  },
+
+  async removeSavedRoute(id) {
+    try {
+      await jsonFetch<void>(url(`/api/saved-routes/${encodeURIComponent(id)}`), { method: "DELETE" });
+    } catch (e) {
+      warn("removeSavedRoute", e);
+      return localRepo.removeSavedRoute(id);
+    }
+  },
+
+  async savedRouteIds() {
+    try {
+      return await jsonFetch<string[]>(url("/api/saved-routes/ids"));
+    } catch (e) {
+      warn("savedRouteIds", e);
+      return localRepo.savedRouteIds();
     }
   },
 };

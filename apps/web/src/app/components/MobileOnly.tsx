@@ -37,6 +37,11 @@ export default function MobileOnly({ children }: { children: React.ReactNode }) 
             borderRadius: 46,
             border: "10px solid #1c1c1f",
             boxShadow: "0 30px 80px rgba(0,0,0,0.6)",
+            // A non-identity transform makes this frame the containing block for
+            // position:fixed descendants, so modals/sheets/toasts stay INSIDE the
+            // phone frame in desktop preview (on real mobile there's no frame, so
+            // fixed = viewport = full screen, as intended).
+            transform: "translateZ(0)",
           }}
         >
           {children}

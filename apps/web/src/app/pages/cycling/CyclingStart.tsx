@@ -4,7 +4,6 @@
 // and enters the app from the in-scene 开始骑行 / 登录 / 注册 cluster.
 
 import React from "react";
-import { useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { STAGE_W, STAGE_H, DURATION } from "./engine";
 import { SCENES } from "./scenes";
@@ -16,8 +15,7 @@ import StartUI from "./StartUI";
 const AUTO_MS = 7000; // dwell per scene before auto-advancing
 const RESUME_MS = 10000; // pause auto-cycle this long after a manual interaction
 
-export default function CyclingStart() {
-  const navigate = useNavigate();
+export default function CyclingStart({ auth = false }: { auth?: boolean } = {}) {
   const [index, setIndex] = React.useState(0);
   const [t, setT] = React.useState(0);
   const [scale, setScale] = React.useState(0.3);
@@ -96,11 +94,6 @@ export default function CyclingStart() {
     }
   };
 
-  const onEnter = (_reason: "ride" | "auth") => {
-    // both 开始骑行 and a successful login begin the ride flow (write-mood first).
-    navigate("/mood");
-  };
-
   // tap the rider to swap boy ⇄ girl (persisted, also used by interior scenes)
   const toggleRider = () => {
     lastInteract.current = performance.now();
@@ -171,7 +164,7 @@ export default function CyclingStart() {
       </div>
 
       {/* interactive layer in real screen coords — always fits the phone frame */}
-      <StartUI color={active.color} t={t} onEnter={onEnter} />
+      <StartUI color={active.color} t={t} mode={auth ? "auth" : "start"} />
 
       {/* one-time hint that the rider is tappable (screen-space) */}
       {showHint && (
