@@ -69,6 +69,26 @@ func (s *Store) GetPost(ctx context.Context, viewerID, id string) (*models.Post,
 	return p, nil
 }
 
+// DeletePost removes a post that userID owns. Returns ErrNotFound if the post
+// doesn't exist OR isn't owned by userID — never leaks existence to a non-owner.
+// Cascading deletes (post_likes, comments) happen via the FK ON DELETE CASCADE.
+func (s *Store) DeletePost(ctx context.Context, userID, id string) error {
+	ctx = ctxOrBackground(ctx)
+	res, err := s.DB.ExecContext(ctx,
+		`DELETE FROM posts WHERE id = $1 AND author_id = $2`, id, userID)
+	if err != nil {
+		return fmt.Errorf("delete post: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete post rows: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // IsPublished checks whether a ride already has a post.
 func (s *Store) IsPublished(ctx context.Context, rideID string) (bool, error) {
 	ctx = ctxOrBackground(ctx)

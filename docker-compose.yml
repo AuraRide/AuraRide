@@ -33,9 +33,10 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-    # 本机调试时偶尔需要 psql 进去,只暴露 127.0.0.1:5432,避免对公网开
+    # 本机调试 psql 用 ${POSTGRES_HOST_PORT:-5432};环境冲突时 export
+    # POSTGRES_HOST_PORT=54321(或别的)即可,不动 compose
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
 
   redis:
     image: redis:7-alpine
@@ -49,7 +50,7 @@ services:
       timeout: 3s
       retries: 5
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
 
   api:
     build:

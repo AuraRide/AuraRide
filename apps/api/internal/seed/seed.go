@@ -12,9 +12,16 @@ import (
 	"github.com/auraride/auraride/apps/api/internal/store"
 )
 
-// 改 markerKey 触发 re-seed —— 已存在的行 ON CONFLICT 跳过,只插新的
-// v2 -> v3:加 me 的 3 条骑行(上次 data.go 没真改进 commit)
-const markerKey = "v3"
+// 改 markerKey 触发 re-seed。
+// v3 -> v4:加 demo comments + 1 saved_route(me 收藏 u4 的 release-red post),
+// 让 Plaza 评论区 / ColorMemory 收藏 tab 第一次打开就不空
+// v4 -> v5:接 SeedPhotoURLs 进 buildPhotos,40 张占位 COS URL 换成真
+// Unsplash CDN 直链 —— ColorMemory / Plaza / RideReview 终于有图。
+// v5 -> v6:加 reseedClean 在 marker 触发后清掉本批种子的所有 prefix-id
+// 行(seed-* / cm-* / sr-* / post-r-*),让 markerKey++ = "新版数据全
+// 量重灌",生产 deploy mvp-a→main 后自动同步,无需手动 SQL。
+// 真用户数据 id 不带这些 prefix,完全不受影响。
+const markerKey = "v6"
 
 // RunIfEnabled inserts the demo dataset once per database. Subsequent calls
 // notice the marker row and return immediately.
@@ -51,17 +58,114 @@ func RunIfEnabled(ctx context.Context, s *store.Store, cfg *config.Config) error
 		}
 	}()
 
+	if err = reseedClean(ctx, tx); err != nil {
+		return err
+	}
 	if err = seedUsers(ctx, tx); err != nil {
 		return err
 	}
 	if err = seedRides(ctx, tx, cfg); err != nil {
 		return err
 	}
+	if err = seedComments(ctx, tx); err != nil {
+		return err
+	}
+	if err = seedSavedRoutes(ctx, tx); err != nil {
+		return err
+	}
 
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("seed: commit: %w", err)
 	}
-	log.Printf("seed: inserted %d users + %d rides", len(Users), len(Rides))
+	log.Printf("seed: inserted %d users + %d rides + %d comments + %d saved_routes",
+		len(Users), len(Rides), len(Comments), len(SavedRoutes))
+	return nil
+}
+
+// reseedClean wipes the previous batch of seed-owned rows so the upcoming
+// INSERTs land fresh. Every seed row has a predictable id prefix —
+// real user data uses random ids — so this is safe against real traffic.
+//
+// Order matters: children before parents (FK CASCADE could do it for us,
+// but explicit DELETE keeps the intent obvious and survives schema tweaks).
+func reseedClean(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`DELETE FROM saved_routes WHERE id LIKE 'sr-%'`,
+		`DELETE FROM comments WHERE id LIKE 'cm-%'`,
+		`DELETE FROM posts WHERE id LIKE 'post-r-%'`,
+		`DELETE FROM ride_photos WHERE id LIKE 'seed-%'`,
+		// rides 表行也清,让 seedRides 的 INSERT 真插(不再 ON CONFLICT 跳)。
+		// 真用户 ride.id 是 random,seed ride.id 是 'r-binjiang' 这类固定串。
+		`DELETE FROM rides WHERE id LIKE 'r-%'`,
+	}
+	for _, stmt := range statements {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("seed: reseed clean (%s): %w", stmt, err)
+		}
+	}
+	return nil
+}
+
+func seedComments(ctx context.Context, tx *sql.Tx) error {
+	for _, c := range Comments {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO comments (id, post_id, author_id, text, created_at)
+			 VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT (id) DO NOTHING`,
+			c.ID, c.PostID, c.AuthorID, c.Text, c.CreatedAt,
+		); err != nil {
+			return fmt.Errorf("seed comment %s: %w", c.ID, err)
+		}
+	}
+	return nil
+}
+
+func seedSavedRoutes(ctx context.Context, tx *sql.Tx) error {
+	// shape + cover come from the source post — we re-derive shape using the
+	// same seed function so the saved row mirrors what the front end would
+	// have drawn if the user had tapped 复制路线 on Plaza.
+	for _, sr := range SavedRoutes {
+		// look up the source post fields from the seed slice
+		var post *models.Post
+		for i, r := range Rides {
+			if "post-"+r.ID == sr.FromPostID {
+				durMin := r.DurationSec / 60
+				if durMin < 1 {
+					durMin = 1
+				}
+				post = &models.Post{
+					ID:          "post-" + r.ID,
+					ColorID:     r.ColorID,
+					City:        r.City,
+					DistanceKm:  r.Distance,
+					DurationMin: durMin,
+					CoverColor:  r.DominantColor,
+					RouteShape:  shapeFromSeed(int64(97+i*53), 14),
+					Caption:     &r.MoodText,
+				}
+				break
+			}
+		}
+		if post == nil {
+			return fmt.Errorf("seed saved_route %s: source post not found", sr.ID)
+		}
+		shape, err := marshalJSON(post.RouteShape)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO saved_routes
+			   (id, user_id, from_post_id, color_id, city, distance_km, duration_min,
+			    route_shape, cover_color, caption, saved_at)
+			 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			 ON CONFLICT (id) DO NOTHING`,
+			sr.ID, sr.UserID, sr.FromPostID, post.ColorID, post.City,
+			post.DistanceKm, post.DurationMin, shape, post.CoverColor,
+			nullableCap(post.Caption), sr.SavedAt,
+		); err != nil {
+			return fmt.Errorf("seed saved_route %s: %w", sr.ID, err)
+		}
+	}
 	return nil
 }
 

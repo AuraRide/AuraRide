@@ -20,6 +20,8 @@ import {
   replaceAllRides,
   emotionMeta,
 } from "./journal";
+import { downscaleDataUrl } from "./image";
+import { buildPalette } from "./weave";
 
 export type { RideRecord, RidePhoto };
 
@@ -43,6 +45,7 @@ export interface Post {
   coverColor: string; // hex — drives the gradient cover
   routeShape: [number, number][]; // normalised 0..1 polyline for the mini-map
   photoUrls: string[]; // data URLs / remote URLs (may be empty)
+  palette?: string[]; // hex swatches (per-photo colours) — lets others rebuild the weave
   likes: number;
   likedByMe: boolean;
   publishedAt: number;
@@ -57,6 +60,46 @@ export interface FeedFilter {
 export interface PublishOptions {
   city: string;
   caption?: string;
+  photoUrls?: string[]; // featured photos chosen by the user (else all ride photos)
+}
+
+// A comment left on a 广场 post.
+export interface Comment {
+  id: string;
+  postId: string;
+  author: PublicUser;
+  text: string;
+  createdAt: number;
+}
+
+// A route copied from someone's post into 我的待出行路线 (planned, not yet ridden).
+export interface SavedRoute {
+  id: string;
+  fromPostId?: string;
+  colorId: string;
+  city: string;
+  distanceKm: number;
+  durationMin: number;
+  routeShape: [number, number][];
+  coverColor: string;
+  caption?: string;
+  savedAt: number;
+}
+
+// A ride that is currently in progress — snapshotted every few seconds so a
+// reload / app-kill / accidental back can resume instead of losing the ride.
+export interface ActiveRide {
+  colorId: string;
+  moodText?: string;
+  startedAt: number;
+  updatedAt: number;
+  distanceKm: number;
+  durationSec: number;
+  maxSpeedKmh: number;
+  climbM: number;
+  plannedDistanceKm?: number;
+  photos: RidePhoto[];
+  track: { lat: number; lng: number }[];
 }
 
 // ── the contract every backend must satisfy ──────────────────────────
@@ -77,6 +120,23 @@ export interface RideRepo {
   listFeed(filter?: FeedFilter): Promise<Post[]>;
   getPost(id: string): Promise<Post | null>;
   toggleLike(postId: string): Promise<Post>;
+  deletePost(postId: string): Promise<void>; // own (locally-published) posts only
+
+  // comments on 广场 posts
+  listComments(postId: string): Promise<Comment[]>;
+  addComment(postId: string, text: string): Promise<Comment>;
+  commentCounts(): Promise<Record<string, number>>; // postId → count, for badges
+
+  // 待出行路线 — routes copied from posts, planned but not yet ridden
+  listSavedRoutes(): Promise<SavedRoute[]>;
+  saveRouteFromPost(post: Post): Promise<SavedRoute>;
+  removeSavedRoute(id: string): Promise<void>;
+  savedRouteIds(): Promise<string[]>; // postIds already saved, for button state
+
+  // in-progress ride (断点续骑)
+  saveActiveRide(state: ActiveRide): Promise<void>;
+  getActiveRide(): Promise<ActiveRide | null>;
+  clearActiveRide(): Promise<void>;
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -84,6 +144,13 @@ export interface RideRepo {
 // ═════════════════════════════════════════════════════════════════════
 const POSTS_KEY = "auraride.posts"; // posts the user published (local mirror)
 const LIKES_KEY = "auraride.likes"; // postIds the user liked
+const ACTIVE_KEY = "auraride.activeRide"; // the ride currently in progress, if any
+const COMMENTS_KEY = "auraride.comments"; // Record<postId, Comment[]>
+const SAVED_ROUTES_KEY = "auraride.savedRoutes"; // SavedRoute[] — 待出行路线
+
+function uid(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
 
 function readJSON<T>(key: string, fallback: T): T {
   try {
@@ -93,11 +160,12 @@ function readJSON<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-function writeJSON(key: string, v: unknown) {
+function writeJSON(key: string, v: unknown): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(v));
+    return true;
   } catch {
-    /* ignore quota */
+    return false; // quota exceeded — caller decides how to recover
   }
 }
 
@@ -123,8 +191,7 @@ function shapeFromSeed(seed: number, n = 14): [number, number][] {
   return pts;
 }
 
-// seeded sample 广场 — other riders' beautiful routes, one per colour family
-const CITIES = ["上海 · 北外滩", "杭州 · 西湖", "成都 · 锦江", "广州 · 珠江", "北京 · 朝阳"];
+// seeded sample 广场 — other riders' beautiful routes, biased per city (see CITY_BIAS)
 const SAMPLE_AUTHORS: PublicUser[] = [
   { id: "u1", handle: "拾光的人", avatarColor: "#3a9b4e", dominantColorId: "calm-green" },
   { id: "u2", handle: "深水区", avatarColor: "#2f6fd6", dominantColorId: "lonely-blue" },
@@ -140,27 +207,97 @@ const SAMPLE_CAPTIONS = [
   "做一阵没有轨迹的风，谁也不必看见。",
 ];
 
+// shift a #rrggbb hex lighter (+) / darker (-)
+function shade(hex: string, amt: number): string {
+  const c = (i: number) => Math.max(0, Math.min(255, parseInt(hex.slice(i, i + 2), 16) + amt));
+  return `rgb(${c(1)},${c(3)},${c(5)})`;
+}
+
+// Seed demo posts for the 城市色彩地图 / 广场, spanning all 34 provincial-level
+// regions of China — each with a primary "色性" so the map reads as meaningful,
+// 2–3 rides apiece. No per-post canvas photos (cards fall back to the route
+// ribbon) so seeding ~85 posts stays cheap. Flip off to start empty.
+const SHOW_SAMPLE_FEED = true;
+const COLOR_KEYS = ["calm-green", "lonely-blue", "explore-yellow", "release-red", "tired-gray"];
+
+// city string keeps a landmark keyword so CityAvatar can match it
+const REGIONS: Array<{ city: string; primary: string }> = [
+  { city: "北京 · 朝阳", primary: "tired-gray" },
+  { city: "上海 · 北外滩", primary: "lonely-blue" },
+  { city: "天津 · 海河", primary: "lonely-blue" },
+  { city: "重庆 · 洪崖洞", primary: "release-red" },
+  { city: "河北 · 山海关", primary: "tired-gray" },
+  { city: "山西 · 平遥", primary: "explore-yellow" },
+  { city: "辽宁 · 大连", primary: "lonely-blue" },
+  { city: "吉林 · 长春", primary: "tired-gray" },
+  { city: "黑龙江 · 哈尔滨", primary: "tired-gray" },
+  { city: "江苏 · 南京", primary: "calm-green" },
+  { city: "浙江 · 西湖", primary: "calm-green" },
+  { city: "安徽 · 黄山", primary: "calm-green" },
+  { city: "福建 · 厦门", primary: "lonely-blue" },
+  { city: "江西 · 滕王阁", primary: "calm-green" },
+  { city: "山东 · 青岛", primary: "explore-yellow" },
+  { city: "河南 · 郑州", primary: "explore-yellow" },
+  { city: "湖北 · 黄鹤楼", primary: "lonely-blue" },
+  { city: "湖南 · 橘子洲", primary: "release-red" },
+  { city: "广东 · 珠江", primary: "release-red" },
+  { city: "海南 · 三亚", primary: "explore-yellow" },
+  { city: "四川 · 锦江", primary: "explore-yellow" },
+  { city: "贵州 · 黄果树", primary: "calm-green" },
+  { city: "云南 · 大理", primary: "calm-green" },
+  { city: "陕西 · 西安", primary: "explore-yellow" },
+  { city: "甘肃 · 敦煌", primary: "explore-yellow" },
+  { city: "青海 · 青海湖", primary: "lonely-blue" },
+  { city: "台湾 · 台北", primary: "calm-green" },
+  { city: "内蒙古 · 呼伦贝尔", primary: "calm-green" },
+  { city: "广西 · 桂林", primary: "calm-green" },
+  { city: "西藏 · 拉萨", primary: "lonely-blue" },
+  { city: "宁夏 · 银川", primary: "tired-gray" },
+  { city: "新疆 · 天山", primary: "explore-yellow" },
+  { city: "香港 · 维港", primary: "lonely-blue" },
+  { city: "澳门 · 大三巴", primary: "release-red" },
+];
+
+let _sampleCache: Post[] | null = null;
 function buildSampleFeed(): Post[] {
-  const colors = ["calm-green", "lonely-blue", "explore-yellow", "release-red", "tired-gray"];
+  if (!SHOW_SAMPLE_FEED) return [];
+  if (_sampleCache) return _sampleCache;
   const base = 1718500000000;
-  return colors.map((colorId, i) => {
-    const meta = emotionMeta(colorId);
-    return {
-      id: `sample-${i + 1}`,
-      author: SAMPLE_AUTHORS[i],
-      colorId,
-      city: CITIES[i],
-      distanceKm: +(4 + i * 2.3).toFixed(1),
-      durationMin: 18 + i * 11,
-      caption: SAMPLE_CAPTIONS[i],
-      coverColor: meta.color,
-      routeShape: shapeFromSeed(97 + i * 53),
-      photoUrls: [],
-      likes: 12 + i * 27,
-      likedByMe: false,
-      publishedAt: base - i * 5400000,
+  const out: Post[] = [];
+  let n = 0;
+  REGIONS.forEach((rg, ci) => {
+    let a = 1009 + ci * 131;
+    const rnd = () => {
+      a = (a * 1664525 + 1013904223) % 4294967296;
+      return a / 4294967296;
     };
+    const k = 2 + Math.floor(rnd() * 2); // 2 or 3 rides per region
+    for (let j = 0; j < k; j++) {
+      // mostly the region's primary colour, with some variation
+      const colorId = rnd() < 0.7 ? rg.primary : COLOR_KEYS[Math.floor(rnd() * COLOR_KEYS.length)];
+      const meta = emotionMeta(colorId);
+      const author = SAMPLE_AUTHORS[(ci + j) % SAMPLE_AUTHORS.length];
+      out.push({
+        id: `sample-${ci}-${j}`,
+        author,
+        colorId,
+        city: rg.city,
+        distanceKm: +(3 + rnd() * 14).toFixed(1),
+        durationMin: 12 + Math.round(rnd() * 80),
+        caption: SAMPLE_CAPTIONS[COLOR_KEYS.indexOf(colorId)] || undefined,
+        coverColor: shade(meta.color, Math.round((rnd() - 0.5) * 42)),
+        routeShape: shapeFromSeed(97 + n * 53),
+        photoUrls: [],
+        palette: buildPalette({ photos: [], dominantColor: meta.color, colorId }),
+        likes: Math.round(rnd() * 120),
+        likedByMe: false,
+        publishedAt: base - n * 5400000,
+      });
+      n++;
+    }
   });
+  _sampleCache = out;
+  return out;
 }
 
 function ridePost(ride: RideRecord, opts: PublishOptions): Post {
@@ -176,7 +313,8 @@ function ridePost(ride: RideRecord, opts: PublishOptions): Post {
     caption: opts.caption,
     coverColor: ride.dominantColor || meta.color,
     routeShape: shapeFromSeed(parseInt(ride.id.slice(-6)) || 7),
-    photoUrls: ride.photos.map((p) => p.dataUrl).slice(0, 6),
+    photoUrls: (opts.photoUrls ?? ride.photos.map((p) => p.dataUrl)).slice(0, 6),
+    palette: buildPalette(ride),
     likes: 0,
     likedByMe: false,
     publishedAt: Date.now(),
@@ -216,11 +354,36 @@ export const localRepo: RideRepo = {
   async publishRide(rideId, opts) {
     const ride = loadRides().find((r) => r.id === rideId);
     if (!ride) throw new Error("ride not found");
-    const post = ridePost(ride, opts);
+
+    // Compress the featured photos before they enter the posts store — feed
+    // covers don't need full-res, and copying multi-MB data-URLs is what blows
+    // the localStorage quota (and made publishing silently fail).
+    const srcUrls = (opts.photoUrls ?? ride.photos.map((p) => p.dataUrl)).slice(0, 6);
+    const photoUrls = await Promise.all(srcUrls.map((u) => downscaleDataUrl(u, 1080, 0.7)));
+    const post = ridePost(ride, { ...opts, photoUrls });
+
     const mine = readJSON<Post[]>(POSTS_KEY, []).filter((p) => p.id !== post.id);
     mine.unshift(post);
-    writeJSON(POSTS_KEY, mine);
-    return post;
+    if (writeJSON(POSTS_KEY, mine)) return post;
+
+    // Quota hit — reclaim space by compacting the journal (drop GPS tracks +
+    // downscale stored ride photos), then retry once.
+    try {
+      const compacted = await Promise.all(
+        loadRides().map(async (r) => ({
+          ...r,
+          track: undefined,
+          photos: await Promise.all(
+            r.photos.map(async (p) => ({ ...p, dataUrl: await downscaleDataUrl(p.dataUrl, 1080, 0.7) }))
+          ),
+        }))
+      );
+      replaceAllRides(compacted);
+    } catch {
+      /* best-effort */
+    }
+    if (writeJSON(POSTS_KEY, mine)) return post;
+    throw new Error("QUOTA_EXCEEDED");
   },
   async isPublished(rideId) {
     return readJSON<Post[]>(POSTS_KEY, []).some((p) => p.id === `post-${rideId}`);
@@ -247,6 +410,73 @@ export const localRepo: RideRepo = {
     const post = await this.getPost(postId);
     if (!post) throw new Error("post not found");
     return post;
+  },
+  async deletePost(postId) {
+    const mine = readJSON<Post[]>(POSTS_KEY, []).filter((p) => p.id !== postId);
+    writeJSON(POSTS_KEY, mine);
+  },
+
+  async listComments(postId) {
+    const all = readJSON<Record<string, Comment[]>>(COMMENTS_KEY, {});
+    return (all[postId] || []).slice().sort((a, b) => a.createdAt - b.createdAt);
+  },
+  async addComment(postId, text) {
+    const all = readJSON<Record<string, Comment[]>>(COMMENTS_KEY, {});
+    const comment: Comment = { id: uid("c"), postId, author: ME, text: text.trim(), createdAt: Date.now() };
+    all[postId] = [...(all[postId] || []), comment];
+    writeJSON(COMMENTS_KEY, all);
+    return comment;
+  },
+  async commentCounts() {
+    const all = readJSON<Record<string, Comment[]>>(COMMENTS_KEY, {});
+    const out: Record<string, number> = {};
+    for (const k of Object.keys(all)) out[k] = all[k].length;
+    return out;
+  },
+
+  async listSavedRoutes() {
+    return readJSON<SavedRoute[]>(SAVED_ROUTES_KEY, []);
+  },
+  async saveRouteFromPost(post) {
+    const list = readJSON<SavedRoute[]>(SAVED_ROUTES_KEY, []);
+    const existing = list.find((r) => r.fromPostId === post.id);
+    if (existing) return existing; // idempotent — copying twice is a no-op
+    const route: SavedRoute = {
+      id: uid("route"),
+      fromPostId: post.id,
+      colorId: post.colorId,
+      city: post.city,
+      distanceKm: post.distanceKm,
+      durationMin: post.durationMin,
+      routeShape: post.routeShape,
+      coverColor: post.coverColor,
+      caption: post.caption,
+      savedAt: Date.now(),
+    };
+    writeJSON(SAVED_ROUTES_KEY, [route, ...list]);
+    return route;
+  },
+  async removeSavedRoute(id) {
+    writeJSON(SAVED_ROUTES_KEY, readJSON<SavedRoute[]>(SAVED_ROUTES_KEY, []).filter((r) => r.id !== id));
+  },
+  async savedRouteIds() {
+    return readJSON<SavedRoute[]>(SAVED_ROUTES_KEY, [])
+      .map((r) => r.fromPostId)
+      .filter((x): x is string => !!x);
+  },
+
+  async saveActiveRide(state) {
+    writeJSON(ACTIVE_KEY, state);
+  },
+  async getActiveRide() {
+    return readJSON<ActiveRide | null>(ACTIVE_KEY, null);
+  },
+  async clearActiveRide() {
+    try {
+      localStorage.removeItem(ACTIVE_KEY);
+    } catch {
+      /* ignore */
+    }
   },
 };
 

@@ -16,6 +16,18 @@ interface RideMapProps {
   themeColor: string;
 }
 
+// stable PRNG for the (fixed-seed) night-map texture, so it doesn't reshuffle
+// every time the trace updates.
+function mulberry(seed: number) {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export default function RideMap({ track, themeColor }: RideMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -123,6 +135,22 @@ export default function RideMap({ track, themeColor }: RideMapProps) {
     return { d, start: screen[0], current: screen[screen.length - 1], W, H };
   }, [track]);
 
+  // Stylized dark "night map" backdrop (fixed seed → stable during the ride).
+  const nightMap = useMemo(() => {
+    const W = 360, H = 780;
+    const rnd = mulberry(7);
+    const tiles: Array<{ x: number; y: number; fill: string }> = [];
+    const palette = ["#10131a", "#0d1015", "#141822", "#0e1218"];
+    for (let y = 0; y < H; y += 40)
+      for (let x = 0; x < W; x += 40) tiles.push({ x: x + 2, y: y + 2, fill: palette[Math.floor(rnd() * palette.length)] });
+    const parks: Array<{ x: number; y: number; w: number; h: number }> = [];
+    for (let i = 0; i < 4; i++) parks.push({ x: rnd() * W * 0.78, y: rnd() * H * 0.82, w: 50 + rnd() * 70, h: 44 + rnd() * 64 });
+    let rx = W * (0.18 + rnd() * 0.5);
+    const river: Array<[number, number]> = [];
+    for (let y = -20; y <= H + 20; y += 26) { rx += (rnd() - 0.5) * 46; river.push([Math.max(20, Math.min(W - 20, rx)), y]); }
+    return { W, H, tiles, parks, river };
+  }, []);
+
   if (useRealMap) {
     // AMap forces position:relative on its container, which breaks `absolute
     // inset-0` height — give it an explicit 100% box instead.
@@ -138,14 +166,24 @@ export default function RideMap({ track, themeColor }: RideMapProps) {
   // Fallback: trace canvas
   return (
     <div className="absolute inset-0 bg-[#0a0c10] overflow-hidden">
-      {/* subtle grid */}
-      <svg className="absolute inset-0 w-full h-full opacity-[0.12]" aria-hidden>
-        <defs>
-          <pattern id="ride-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke={themeColor} strokeWidth="0.5" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#ride-grid)" />
+      {/* stylized dark night-map backdrop (blocks · roads · river · parks) */}
+      <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${nightMap.W} ${nightMap.H}`} preserveAspectRatio="xMidYMid slice" aria-hidden>
+        <rect width={nightMap.W} height={nightMap.H} fill="#0a0c10" />
+        {nightMap.tiles.map((b, i) => (
+          <rect key={i} x={b.x} y={b.y} width={36} height={36} fill={b.fill} />
+        ))}
+        {nightMap.parks.map((p, i) => (
+          <rect key={"p" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill="#0f1d16" />
+        ))}
+        <polyline points={nightMap.river.map((p) => p.join(",")).join(" ")} fill="none" stroke="#122436" strokeWidth="16" strokeLinejoin="round" strokeLinecap="round" />
+        <g stroke="#1b2230" strokeWidth="1.5">
+          {Array.from({ length: Math.ceil(nightMap.W / 40) + 1 }).map((_, i) => (
+            <line key={"v" + i} x1={i * 40} y1={0} x2={i * 40} y2={nightMap.H} />
+          ))}
+          {Array.from({ length: Math.ceil(nightMap.H / 40) + 1 }).map((_, i) => (
+            <line key={"h" + i} x1={0} y1={i * 40} x2={nightMap.W} y2={i * 40} />
+          ))}
+        </g>
       </svg>
 
       {traceGeom ? (

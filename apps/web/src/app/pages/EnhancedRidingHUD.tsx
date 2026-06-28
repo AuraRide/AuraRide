@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
-import { Camera, Pause, Square, X } from "lucide-react";
+import { Camera, Pause, Square, X, Heart } from "lucide-react";
 import {
   RidePhoto,
   classifyColor,
   emotionMeta,
   sampleDominantColor,
 } from "../lib/journal";
-import { repo } from "../lib/rideRepo";
+import { repo, type ActiveRide } from "../lib/rideRepo";
 import {
   PIXEL_FONT,
   PIXEL_OUT,
@@ -27,6 +27,9 @@ import WeatherEffects from "../components/WeatherEffects";
 import CheckpointMarker from "../components/CheckpointMarker";
 import { getCheckpointMessage } from "../data/checkpointMessages";
 import { useGeolocation } from "../lib/useGeolocation";
+import { downscaleDataUrl } from "../lib/image";
+import { useHeartRate } from "../lib/useHeartRate";
+import { announceKm } from "../lib/rideAnnounce";
 import RideMap from "../components/RideMap";
 import { type LatLng } from "../lib/gcj02";
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
@@ -144,6 +147,7 @@ export default function EnhancedRidingHUD() {
   const navigate = useNavigate();
   const colorId = location.state?.colorId || "calm-green";
   const moodText: string | undefined = location.state?.moodText;
+  const plannedDistanceKm: number | undefined = location.state?.plannedDistanceKm;
   const themeColor = routeColors[colorId];
   const label = emotionLabel[colorId] || emotionLabel["tired-gray"];
   const accent = CTA_COLORS[emotionToCtaColor(colorId)];
@@ -162,6 +166,16 @@ export default function EnhancedRidingHUD() {
   const [duration, setDuration] = useState(0);
   const [heartRate, setHeartRate] = useState(85);
   const [isPaused, setIsPaused] = useState(false);
+  // 情绪态 ↔ 数据态 readout (persisted preference)
+  const [proMode, setProMode] = useState<boolean>(() => {
+    try { return localStorage.getItem("auraride.proHud") === "1"; } catch { return false; }
+  });
+  const [maxSpeed, setMaxSpeed] = useState(0);
+  // 断点续骑 — an unfinished ride detected on mount, awaiting resume / discard.
+  const [resumePrompt, setResumePrompt] = useState<ActiveRide | null>(null);
+  const resumedRef = useRef(false); // becomes true once we restore (or discard) a snapshot
+  const resumeBaseKmRef = useRef(0); // restored distance that GPS distance is added on top of
+  const snapRef = useRef<ActiveRide | null>(null); // latest snapshot, written every few seconds
   const [weather, setWeather] = useState<"clear" | "rain" | "wind" | "cloudy" | "sunset">("clear");
   const [windDirection, setWindDirection] = useState<"head" | "tail">("tail");
   const [reachedCheckpoints, setReachedCheckpoints] = useState<number[]>([]);
@@ -174,6 +188,9 @@ export default function EnhancedRidingHUD() {
   // to a gentle simulation when there is no fix (desktop preview / denied perms).
   const gps = useGeolocation({ paused: isPaused });
   const usingGps = gps.status === "tracking";
+  // Optional BLE heart-rate strap — real bpm when paired, else the simulation.
+  const hr = useHeartRate();
+  const liveHr = hr.connected && hr.bpm != null ? hr.bpm : Math.round(heartRate);
 
   // The ride's path, oldest → newest (raw WGS-84). Drawn by RideMap.
   const [track, setTrack] = useState<LatLng[]>([]);
@@ -234,11 +251,80 @@ export default function EnhancedRidingHUD() {
     return () => clearInterval(id);
   }, [isPaused]);
 
+  // Remember the readout preference across rides.
+  useEffect(() => {
+    try { localStorage.setItem("auraride.proHud", proMode ? "1" : "0"); } catch { /* ignore */ }
+  }, [proMode]);
+
+  // Track the ride's peak speed (real metric for the data HUD).
+  useEffect(() => {
+    if (!isPaused && speed > 0) setMaxSpeed((m) => (speed > m ? speed : m));
+  }, [speed, isPaused]);
+
+  // Fire a per-kilometre cue (voice/haptics live in rideAnnounce — stubbed now).
+  const lastKmRef = useRef(0);
+  useEffect(() => {
+    const km = Math.floor(distance);
+    if (km > lastKmRef.current && km >= 1) {
+      lastKmRef.current = km;
+      const avg = distance > 0 && duration > 0 ? (distance * 3600) / duration : 0;
+      const pm = distance > 0 ? duration / 60 / distance : 0;
+      const pace = `${Math.floor(pm)}:${Math.round((pm % 1) * 60).toString().padStart(2, "0")}`;
+      announceKm({ km, avgSpeedKmh: avg, paceStr: pace, durationSec: duration });
+    }
+  }, [distance, duration]);
+
+  // 断点续骑 — on mount, offer to resume a recent unfinished ride.
+  useEffect(() => {
+    let cancelled = false;
+    repo.getActiveRide().then((s) => {
+      if (cancelled || !s) return;
+      const fresh = Date.now() - s.updatedAt < 6 * 3600 * 1000; // within 6h
+      const meaningful = s.distanceKm > 0.05 || s.durationSec > 10;
+      if (fresh && meaningful) setResumePrompt(s);
+      else repo.clearActiveRide();
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist the in-progress ride every few seconds (paused while the resume
+  // prompt is up so we don't overwrite the snapshot before the user decides).
+  useEffect(() => {
+    if (resumePrompt) return;
+    const id = setInterval(() => {
+      if (snapRef.current) repo.saveActiveRide({ ...snapRef.current, updatedAt: Date.now() });
+    }, 3000);
+    return () => clearInterval(id);
+  }, [resumePrompt]);
+
+  const resumeRide = () => {
+    const s = resumePrompt;
+    if (!s) return;
+    startedAtRef.current = s.startedAt;
+    resumeBaseKmRef.current = s.distanceKm;
+    setDistance(s.distanceKm);
+    setDuration(s.durationSec);
+    setMaxSpeed(s.maxSpeedKmh);
+    setPhotos(s.photos || []);
+    setTrack(s.track || []);
+    resumedRef.current = true;
+    setResumePrompt(null);
+  };
+  const discardResume = () => {
+    repo.clearActiveRide();
+    setDistance(0);
+    setDuration(0);
+    resumedRef.current = true;
+    setResumePrompt(null);
+  };
+
   // GPS is the source of truth for speed & distance whenever we have a fix.
   useEffect(() => {
     if (gps.status !== "tracking") return;
     setSpeed(isPaused ? 0 : gps.speedKmh);
-    setDistance(gps.distanceKm);
+    // resumeBaseKmRef carries the restored distance so a resumed ride keeps adding
+    // on top of it instead of snapping back to the fresh GPS accumulator's 0.
+    setDistance(resumeBaseKmRef.current + gps.distanceKm);
   }, [gps.status, gps.speedKmh, gps.distanceKm, isPaused]);
 
   // Fallback motion when there's no GPS fix (desktop preview / denied / locating)
@@ -300,6 +386,7 @@ export default function EnhancedRidingHUD() {
   }, [distance]);
 
   const openPhotoSheet = () => {
+    if (!canCapture) return; // capture only at a stop
     setDraftDataUrl(null);
     setDraftColor(themeColor);
     setDraftCaption("");
@@ -311,7 +398,9 @@ export default function EnhancedRidingHUD() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async () => {
-      const dataUrl = reader.result as string;
+      // Shrink the photo immediately so the journal + 广场 stay within the
+      // localStorage budget (raw phone JPEGs are multi-MB).
+      const dataUrl = await downscaleDataUrl(reader.result as string, 1280, 0.72);
       const color = await sampleDominantColor(dataUrl);
       setDraftDataUrl(dataUrl);
       setDraftColor(color);
@@ -337,24 +426,13 @@ export default function EnhancedRidingHUD() {
   };
 
   const handleEnd = () => {
-    // Average the sampled colors so the saved ride has a "judged" overall color.
-    let dominant = themeColor;
-    if (photos.length > 0) {
-      const avg = photos.reduce(
-        (acc, p) => {
-          acc.r += parseInt(p.color.slice(1, 3), 16);
-          acc.g += parseInt(p.color.slice(3, 5), 16);
-          acc.b += parseInt(p.color.slice(5, 7), 16);
-          return acc;
-        },
-        { r: 0, g: 0, b: 0 }
-      );
-      const n = photos.length;
-      dominant = `#${[avg.r / n, avg.g / n, avg.b / n]
-        .map((c) => Math.round(c).toString(16).padStart(2, "0"))
-        .join("")}`;
-    }
-    const judgedColorId = photos.length > 0 ? classifyColor(dominant) : colorId;
+    // The emotion colour comes from the mood at /color and stays the ride's colour
+    // all the way to the journal — one consistent throughline. (Each photo still
+    // carries its own sampled colour for capture flavour, but it never re-judges
+    // or overrides the ride's colour.)
+    const judgedColorId = colorId;
+    const dominant = themeColor; // canonical hex of the mood colour
+    repo.clearActiveRide(); // ride is finishing — drop the in-progress snapshot
     repo.saveRide({
       id: `${startedAtRef.current}`,
       colorId: judgedColorId,
@@ -365,11 +443,46 @@ export default function EnhancedRidingHUD() {
       moodText,
       photos,
       dominantColor: dominant,
+      track,
+      maxSpeedKmh: maxSpeed,
     });
-    navigate("/review", { state: { colorId: judgedColorId, distance, duration, moodText, rideId: `${startedAtRef.current}` } });
+    navigate("/weave", { state: { colorId: judgedColorId, distance, duration, moodText, rideId: `${startedAtRef.current}` } });
   };
 
-  const routeProgress = Math.min(distance / 10.3, 1);
+  const routeProgress = Math.min(distance / (plannedDistanceKm || 10.3), 1);
+
+  // 打卡点采色：only let the rider capture a moment when they've actually stopped
+  // (or coasting slowly) / paused — never fumbling with the phone at speed. This
+  // is the product's stance: ride first, record at the stops.
+  const STOP_KMH = 3;
+  const canCapture = isPaused || speed <= STOP_KMH;
+
+  // ── derived data-HUD metrics (all real, no fabrication) ──
+  const avgSpeed = distance > 0 && duration > 0 ? (distance * 3600) / duration : 0;
+  const paceMin = distance > 0 ? duration / 60 / distance : 0;
+  const paceStr = distance > 0 && duration > 0
+    ? `${Math.floor(paceMin)}:${Math.round((paceMin % 1) * 60).toString().padStart(2, "0")}`
+    : "--";
+  const climbStr = gps.hasAltitude ? `${Math.round(gps.climbM)}` : "—";
+  const elapsedStr = `${Math.floor(duration / 60).toString().padStart(2, "0")}:${(duration % 60).toString().padStart(2, "0")}`;
+
+  // Keep the latest resume-snapshot ready for the periodic writer (only once the
+  // ride has actually started), so the writer interval never churns per tick.
+  snapRef.current = duration > 1 || distance > 0.02
+    ? {
+        colorId,
+        moodText,
+        plannedDistanceKm,
+        startedAt: startedAtRef.current,
+        updatedAt: Date.now(),
+        distanceKm: distance,
+        durationSec: duration,
+        maxSpeedKmh: maxSpeed,
+        climbM: gps.hasAltitude ? gps.climbM : 0,
+        photos,
+        track,
+      }
+    : null;
 
   return (
     <div className="size-full text-white overflow-hidden relative bg-black">
@@ -735,9 +848,6 @@ export default function EnhancedRidingHUD() {
                   className="w-2.5 h-2.5 rounded-full"
                   style={{ backgroundColor: photoToast.color, boxShadow: `0 0 8px ${photoToast.color}` }}
                 />
-                <span className="font-serif-cn text-[11px] tracking-[0.25em] text-white/90" style={{ fontWeight: 500 }}>
-                  {emotionMeta(classifyColor(photoToast.color)).cn}
-                </span>
               </div>
             </div>
             <button onClick={() => setPhotoToast(null)} className="text-white/50 ml-1">
@@ -782,7 +892,7 @@ export default function EnhancedRidingHUD() {
           </div>
           <div style={{ background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, padding: "6px 11px" }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: INK }}>
-              {speed > 25 ? "冲刺" : heartRate > 140 ? "爬坡" : "巡航"}
+              {speed > 25 ? "冲刺" : liveHr > 140 ? "爬坡" : "巡航"}
             </span>
           </div>
           <div className="flex items-center" style={{ gap: 6, background: weather === "wind" ? accent.tint : PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + (weather === "wind" ? accent.fill : PIXEL_OUT), padding: "6px 11px" }}>
@@ -800,6 +910,28 @@ export default function EnhancedRidingHUD() {
               {weather === "rain" && "小雨"}
               {weather === "sunset" && "日落"}
             </span>
+          </div>
+
+          {/* right group: heart-rate strap + 情绪/数据 toggle */}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            {hr.supported && (
+              <button
+                onClick={() => (hr.connected ? hr.disconnect() : hr.connect())}
+                title={hr.connected ? `${hr.deviceName ?? "心率带"} 已连接` : "连接蓝牙心率带"}
+                style={{ display: "flex", alignItems: "center", gap: 4, background: hr.connected ? "#d23b2c" : PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + (hr.connected ? "#d23b2c" : PIXEL_OUT), padding: "6px 9px", border: "none", cursor: "pointer", fontFamily: PIXEL_FONT }}
+              >
+                <Heart size={11} fill={hr.connected ? "#fff" : "none"} color={hr.connected ? "#fff" : INK} />
+                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: hr.connected ? "#fff" : INK }}>
+                  {hr.connected ? (hr.bpm ?? "--") : "连接"}
+                </span>
+              </button>
+            )}
+            <button
+              onClick={() => setProMode((p) => !p)}
+              style={{ display: "flex", alignItems: "center", gap: 5, background: proMode ? accent.fill : PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + (proMode ? accent.fill : PIXEL_OUT), padding: "6px 11px", border: "none", cursor: "pointer", fontFamily: PIXEL_FONT }}
+            >
+              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: proMode ? accent.text : INK }}>{proMode ? "数据" : "情绪"}</span>
+            </button>
           </div>
         </div>
 
@@ -837,37 +969,56 @@ export default function EnhancedRidingHUD() {
               <div style={{ fontSize: 12, letterSpacing: 5, marginTop: 2, fontWeight: 700, color: themeColor }}>km/h</div>
             </motion.div>
 
-            <div style={{ fontSize: 12, letterSpacing: 2, color: "rgba(255,255,255,0.62)", marginTop: 16, fontWeight: 600 }}>{label.subtitle}</div>
+            <div style={{ fontSize: 12, letterSpacing: 2, color: "rgba(255,255,255,0.62)", marginTop: 16, fontWeight: 600 }}>{proMode ? "当前时速" : label.subtitle}</div>
           </div>
         </div>
 
-        {/* Stats — cream pixel panel */}
-        <div
-          className="grid grid-cols-3 mb-4"
-          style={{ background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, fontFamily: PIXEL_FONT }}
-        >
-          <div style={{ textAlign: "center", padding: "12px 0", boxShadow: "inset -1px 0 0 0 rgba(58,40,23,0.18)" }}>
-            <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1, color: INK }}>{distance.toFixed(2)}</div>
-            <div style={{ fontSize: 10, letterSpacing: 3, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>距离</div>
+        {/* Stats — cream pixel panel; 情绪态 = vibe, 数据态 = real metrics only */}
+        {proMode ? (
+          <div className="grid grid-cols-3 mb-4" style={{ background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, fontFamily: PIXEL_FONT }}>
+            {([
+              [distance.toFixed(2), "里程 km"],
+              [avgSpeed.toFixed(1), "均速 km/h"],
+              [maxSpeed.toFixed(1), "最高速"],
+              [paceStr, "配速 /km"],
+              [climbStr, "爬升 m"],
+              [elapsedStr, "计时"],
+            ] as Array<[string, string]>).map(([v, l], i) => {
+              const sh = [
+                i % 3 !== 2 ? "inset -1px 0 0 0 rgba(58,40,23,0.18)" : "",
+                i < 3 ? "inset 0 -1px 0 0 rgba(58,40,23,0.18)" : "",
+              ].filter(Boolean).join(", ");
+              return (
+                <div key={l} style={{ textAlign: "center", padding: "11px 0", boxShadow: sh || undefined }}>
+                  <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1, color: INK }}>{v}</div>
+                  <div style={{ fontSize: 9, letterSpacing: 2, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>{l}</div>
+                </div>
+              );
+            })}
           </div>
-          <div style={{ textAlign: "center", padding: "12px 0", boxShadow: "inset -1px 0 0 0 rgba(58,40,23,0.18)" }}>
-            <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1, color: INK }}>
-              {(distance > 0 ? (duration / 60 / distance) * 60 : 0).toFixed(1)}
+        ) : (
+          <div className="grid grid-cols-3 mb-4" style={{ background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, fontFamily: PIXEL_FONT }}>
+            <div style={{ textAlign: "center", padding: "12px 0", boxShadow: "inset -1px 0 0 0 rgba(58,40,23,0.18)" }}>
+              <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1, color: INK }}>{distance.toFixed(2)}</div>
+              <div style={{ fontSize: 10, letterSpacing: 3, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>距离</div>
             </div>
-            <div style={{ fontSize: 10, letterSpacing: 3, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>配速 km/h</div>
-          </div>
-          <div style={{ textAlign: "center", padding: "12px 0" }}>
-            <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1, color: heartRate > 140 ? "#d23b2c" : INK, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <motion.div
-                style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: heartRate > 140 ? "#d23b2c" : accent.fill }}
-                animate={{ opacity: [0.3, 1, 0.3] }}
-                transition={{ duration: 0.8, repeat: Infinity }}
-              />
-              {Math.round(heartRate)}
+            <div style={{ textAlign: "center", padding: "12px 0", boxShadow: "inset -1px 0 0 0 rgba(58,40,23,0.18)" }}>
+              <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1, color: INK }}>{avgSpeed.toFixed(1)}</div>
+              <div style={{ fontSize: 10, letterSpacing: 3, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>均速 km/h</div>
             </div>
-            <div style={{ fontSize: 10, letterSpacing: 3, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>心率 cpm</div>
+            <div style={{ textAlign: "center", padding: "12px 0" }}>
+              <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1, color: liveHr > 140 ? "#d23b2c" : INK, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <motion.div
+                  style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: liveHr > 140 ? "#d23b2c" : accent.fill }}
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 0.8, repeat: Infinity }}
+                />
+                {liveHr}
+              </div>
+              <div style={{ fontSize: 10, letterSpacing: 3, color: INK_SOFT, marginTop: 6, fontWeight: 600 }}>{hr.connected ? "心率 bpm ·实时" : "心率 bpm"}</div>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Photo strip — shows captured ride photos */}
         {photos.length > 0 && (
@@ -887,11 +1038,29 @@ export default function EnhancedRidingHUD() {
           </div>
         )}
 
+        {/* 打卡点采色提示 — capture is reserved for stops */}
+        <div className="mb-2 text-center" style={{ fontFamily: PIXEL_FONT }}>
+          {canCapture ? (
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: accent.fill }}>停下来了 · 记一刻路上的颜色</span>
+          ) : (
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: 2, color: "rgba(255,255,255,0.5)" }}>专注路况 · 停下时再记一刻</span>
+          )}
+        </div>
+
         {/* Bottom Controls — pixel buttons */}
         <div className="flex gap-3 items-center">
-          <PixelButton onClick={openPhotoSheet} fill={accent.fill} text={accent.text} height={50} style={{ width: 58 }}>
-            <Camera size={16} />
-          </PixelButton>
+          {canCapture ? (
+            <PixelButton onClick={openPhotoSheet} fill={accent.fill} text={accent.text} height={50} style={{ width: 58 }}>
+              <Camera size={16} />
+            </PixelButton>
+          ) : (
+            <div
+              aria-disabled
+              style={{ width: 58, height: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.06)", boxShadow: "inset 0 0 0 2px rgba(255,255,255,0.18)", clipPath: STAIR, color: "rgba(255,255,255,0.35)" }}
+            >
+              <Camera size={16} />
+            </div>
+          )}
           <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoPick} className="hidden" />
           <PixelButton onClick={() => setIsPaused(!isPaused)} fill="#f6efdf" text={INK} height={50} fontSize={14} fontWeight={700} letter={2} style={{ width: 104 }}>
             <Pause size={14} />
@@ -914,32 +1083,31 @@ export default function EnhancedRidingHUD() {
               position: "absolute",
               left: "50%",
               top: "50%",
-              width: "min(90vw, 400px)",
-              maxHeight: "86%",
+              width: "min(86vw, 340px)",
+              maxHeight: "84%",
               overflowY: "auto",
               background: PAPER,
               clipPath: STAIR,
               boxShadow: "inset 0 0 0 3px " + PIXEL_OUT,
-              padding: "20px 22px 22px",
+              padding: "16px 18px 18px",
             }}
           >
-            <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
               <div>
-                <div style={{ fontSize: 10, letterSpacing: 5, color: INK_FAINT, fontWeight: 600 }}>MOMENT</div>
-                <div style={{ fontSize: 18, letterSpacing: 2, color: INK, fontWeight: 800, marginTop: 2 }}>记一刻路上</div>
+                <div style={{ fontSize: 9, letterSpacing: 4, color: INK_FAINT, fontWeight: 600 }}>MOMENT</div>
+                <div style={{ fontSize: 16, letterSpacing: 2, color: INK, fontWeight: 800, marginTop: 2 }}>记一刻路上</div>
               </div>
               <button onClick={() => setShowSheet(false)} style={{ background: "none", border: "none", cursor: "pointer", color: INK_SOFT }}>
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
             {/* Preview / picker */}
             {draftDataUrl ? (
-              <div style={{ position: "relative", overflow: "hidden", marginBottom: 16, clipPath: STAIR, boxShadow: "inset 0 0 0 3px " + PIXEL_OUT }}>
-                <img src={draftDataUrl} alt="preview" className="w-full object-cover" style={{ height: 200, display: "block" }} />
-                <div style={{ position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 6, background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, padding: "5px 9px" }}>
-                  <span style={{ width: 9, height: 9, background: draftColor, clipPath: STAIR }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: INK }}>{emotionMeta(classifyColor(draftColor)).cn}</span>
+              <div style={{ position: "relative", overflow: "hidden", marginBottom: 12, clipPath: STAIR, boxShadow: "inset 0 0 0 3px " + PIXEL_OUT }}>
+                <img src={draftDataUrl} alt="preview" className="w-full object-cover" style={{ height: 150, display: "block" }} />
+                <div style={{ position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 6, background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, padding: "6px 9px" }}>
+                  <span style={{ width: 10, height: 10, background: draftColor, clipPath: STAIR }} />
                 </div>
                 <button
                   onClick={() => fileInputRef.current?.click()}
@@ -951,23 +1119,45 @@ export default function EnhancedRidingHUD() {
             ) : (
               <button
                 onClick={() => fileInputRef.current?.click()}
-                style={{ width: "100%", height: 168, marginBottom: 16, background: accent.tint, clipPath: STAIR, boxShadow: "inset 0 0 0 3px " + accent.fill, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", border: "none", fontFamily: PIXEL_FONT }}
+                style={{ width: "100%", height: 124, marginBottom: 12, background: accent.tint, clipPath: STAIR, boxShadow: "inset 0 0 0 3px " + accent.fill, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, cursor: "pointer", border: "none", fontFamily: PIXEL_FONT }}
               >
-                <Camera size={28} style={{ color: accent.fill }} />
+                <Camera size={24} style={{ color: accent.fill }} />
                 <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 2, color: accent.ink }}>拍摄 / 上传照片</span>
-                <span style={{ fontSize: 11, color: INK_FAINT }}>系统会从画面里读出此刻的颜色</span>
+                <span style={{ fontSize: 10, color: INK_FAINT }}>在这个停留点 · 读出此刻的颜色</span>
               </button>
             )}
 
             {/* Caption */}
-            <div style={{ marginBottom: 16 }}>
-              <PixelField value={draftCaption} onChange={(v) => setDraftCaption(v.slice(0, 60))} placeholder="想说点什么…（一句也行）" accent={accent.fill} multiline />
+            <div style={{ marginBottom: 12 }}>
+              <PixelField value={draftCaption} onChange={(v) => setDraftCaption(v.slice(0, 60))} placeholder="想说点什么…（一句也行）" accent={accent.fill} multiline rows={2} />
               <div style={{ textAlign: "right", fontSize: 10, color: INK_FAINT, marginTop: 4 }}>{draftCaption.length}/60</div>
             </div>
 
-            <PixelButton onClick={confirmPhoto} disabled={!draftDataUrl} fill={accent.fill} text={accent.text} height={52} fontSize={16} fontWeight={800} letter={4}>
+            <PixelButton onClick={confirmPhoto} disabled={!draftDataUrl} fill={accent.fill} text={accent.text} height={46} fontSize={15} fontWeight={800} letter={4}>
               收入旅程
             </PixelButton>
+          </div>
+        </div>
+      )}
+
+      {/* 断点续骑 — resume an unfinished ride detected on mount */}
+      {resumePrompt && (
+        <div className="absolute inset-0" style={{ zIndex: 70, display: "grid", placeItems: "center", fontFamily: PIXEL_FONT }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(20,16,8,0.62)" }} />
+          <div className="pixel-pop" style={{ position: "relative", width: "min(84vw, 320px)", background: PAPER, clipPath: STAIR, boxShadow: "inset 0 0 0 3px " + PIXEL_OUT, padding: "22px 22px 20px", textAlign: "center" }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: INK }}>发现未完成的骑行</div>
+            <div style={{ fontSize: 13, color: INK_SOFT, marginTop: 8, lineHeight: 1.7 }}>
+              {resumePrompt.distanceKm.toFixed(2)} km · {Math.max(1, Math.floor(resumePrompt.durationSec / 60))} 分钟
+              <br />要继续上次的骑行吗？
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+              <PixelButton onClick={discardResume} flex={1} fill="#f6efdf" text={INK} height={48} fontSize={15} fontWeight={700} letter={2}>
+                开始新的
+              </PixelButton>
+              <PixelButton onClick={resumeRide} flex={1} fill={accent.fill} text={accent.text} height={48} fontSize={15} fontWeight={800} letter={2}>
+                继续
+              </PixelButton>
+            </div>
           </div>
         </div>
       )}

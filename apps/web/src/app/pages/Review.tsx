@@ -123,14 +123,14 @@ export default function Review() {
 
         {/* buttons */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.44, duration: 0.5 }} className="mt-auto" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <PixelButton onClick={() => navigate("/share", { state: { rideId } })} fill={accent.fill} text={accent.text} height={54} fontSize={16} fontWeight={800} letter={4}>
+          <PixelButton onClick={() => navigate("/share", { state: { rideId, colorId, distance, duration, moodText: location.state?.moodText } })} fill={accent.fill} text={accent.text} height={54} fontSize={16} fontWeight={800} letter={4}>
             生成分享卡
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={accent.text} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 12h14M13 6l6 6-6 6" />
             </svg>
           </PixelButton>
           <div style={{ display: "flex", gap: 12 }}>
-            <PixelButton onClick={() => navigate("/journal")} flex={1} fill="#f6efdf" text={INK} height={48} fontSize={14} fontWeight={700} letter={3}>
+            <PixelButton onClick={() => navigate("/colors")} flex={1} fill="#f6efdf" text={INK} height={48} fontSize={14} fontWeight={700} letter={3}>
               查看旅程
             </PixelButton>
             <PixelButton onClick={() => navigate("/")} flex={1} fill="#f6efdf" text={INK} height={48} fontSize={14} fontWeight={700} letter={3}>
