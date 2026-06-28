@@ -69,9 +69,12 @@ services:
       COS_SECRET_KEY: ${COS_SECRET_KEY:-}
       GIN_MODE: ${GIN_MODE:-release}
       PORT: "8080"
-      # 首次部署灌 demo 数据(5 用户 + 5 上海骑行 + 28 张照片占位):
-      # 单次部署传 SEED_ENABLED=true compose up -d --no-deps api,跑完一次后回 false
-      SEED_ENABLED: ${SEED_ENABLED:-false}
+      # Seed 默认开:seed_marker 保证幂等(同 markerKey 只跑一次,重复
+      # 起栈无副作用),markerKey++ 后 reseedClean 自动重灌种子数据
+      # (只清 seed-* / r-* / cm-* / sr-* / post-r-* 这种 prefix-id 行,
+      # 真用户 random UUID 完全不受影响)。
+      # 不想灌(空数据 demo)时显式 SEED_ENABLED=false 跑即可。
+      SEED_ENABLED: ${SEED_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy
