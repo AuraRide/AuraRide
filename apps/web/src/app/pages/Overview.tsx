@@ -174,7 +174,7 @@ export default function Overview() {
 
       {/* Close */}
       <button
-        onClick={() => navigate("/journal")}
+        onClick={() => navigate("/colors")}
         className="absolute top-7 right-4 z-30 text-white/70 active:scale-90 transition-transform"
         aria-label="关闭"
       >
@@ -297,10 +297,7 @@ function ColorScene({ scene }: { scene: Extract<Scene, { kind: "color" }> }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7 }}
       >
-        <div className="text-[44px] font-extralight tracking-[0.2em]" style={{ color: meta.color, textShadow: `0 0 26px ${meta.color}77` }}>
-          {meta.en}
-        </div>
-        <div className="font-serif-cn text-[13px] tracking-[0.4em] text-white/80 mt-1">{meta.cn}</div>
+        <div style={{ width: 84, height: 10, margin: "0 auto", background: meta.color, boxShadow: `0 0 26px ${meta.color}aa`, borderRadius: 2 }} />
         <div className="font-serif-cn text-[11px] tracking-[0.25em] text-white/45 mt-3">
           {photos.length} 个瞬间 · {distance.toFixed(1)} km
         </div>
@@ -380,7 +377,7 @@ function FinaleScene({ photos, dominant }: { photos: Moment[]; dominant: string 
 
           <div className="mt-8 flex gap-3 justify-center">
             <div style={{ width: 130 }}>
-              <PixelButton onClick={() => navigate("/journal")} fill="#f6efdf" text={INK} height={48} fontSize={14} fontWeight={700} letter={3}>完成</PixelButton>
+              <PixelButton onClick={() => navigate("/colors")} fill="#f6efdf" text={INK} height={48} fontSize={14} fontWeight={700} letter={3}>完成</PixelButton>
             </div>
             <div style={{ width: 150 }}>
               <PixelButton onClick={() => navigate(0)} fill={dominant} text="#241a10" height={48} fontSize={14} fontWeight={800} letter={3}>再看一次</PixelButton>

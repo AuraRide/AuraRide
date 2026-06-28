@@ -2,6 +2,8 @@
 // user has something to come back to. Photos are stored as data URLs so the
 // gallery survives reloads without needing a backend.
 
+import { COLOR_PROFILES, type ColorId } from "./moodColor";
+
 export interface RidePhoto {
   dataUrl: string;
   color: string; // hex — sampled dominant color
@@ -19,6 +21,8 @@ export interface RideRecord {
   moodText?: string;
   photos: RidePhoto[];
   dominantColor: string; // overall ride color, judged from photos (or theme)
+  track?: Array<{ lat: number; lng: number }>; // raw WGS-84 GPS path (for GPX export)
+  maxSpeedKmh?: number; // peak speed (for the training log)
 }
 
 const KEY = "auraride.rides";
@@ -122,13 +126,9 @@ export function classifyColor(
   return "lonely-blue";
 }
 
+// cn/en/colour all come from COLOR_PROFILES — the single source of truth, so a
+// rename happens in exactly one place and never drifts across screens.
 export function emotionMeta(colorId: string) {
-  const map: Record<string, { cn: string; en: string; color: string }> = {
-    "calm-green": { cn: "暗绿", en: "MOSS", color: "#34E89E" },
-    "lonely-blue": { cn: "深蓝", en: "DEPTH", color: "#4FA8FF" },
-    "explore-yellow": { cn: "赭黄", en: "TRACE", color: "#FFB54A" },
-    "release-red": { cn: "余火", en: "EMBER", color: "#FF3344" },
-    "tired-gray": { cn: "灰白", en: "VOID", color: "#C9D2D8" },
-  };
-  return map[colorId] || map["tired-gray"];
+  const p = COLOR_PROFILES[(colorId as ColorId)] || COLOR_PROFILES["tired-gray"];
+  return { cn: p.cn, en: p.en, color: p.hex };
 }

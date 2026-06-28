@@ -13,6 +13,18 @@ body {
   margin: 0;
 }
 
+/* This is a mobile-only app; native phones overlay (invisible) scrollbars. Hide
+   the desktop scrollbar everywhere so the preview matches the on-device look. */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/old Edge */
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 /* pixel bottom-sheet slide-up (CSS-timeline driven, so it lands at rest even
    when rAF is throttled) */
 @keyframes pixelSheetUp {

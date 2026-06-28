@@ -143,6 +143,7 @@ export function PixelField({
   accent,
   type = "text",
   multiline,
+  rows = 3,
 }: {
   label?: string;
   value: string;
@@ -151,6 +152,7 @@ export function PixelField({
   accent: string;
   type?: string;
   multiline?: boolean;
+  rows?: number;
 }) {
   const [focus, setFocus] = React.useState(false);
   const shared: React.CSSProperties = {
@@ -172,7 +174,7 @@ export function PixelField({
     <label style={{ display: "block" }}>
       {label && <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: INK_SOFT, marginBottom: 7, fontFamily: PIXEL_FONT }}>{label}</span>}
       {multiline ? (
-        <textarea value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} rows={3} style={shared} />
+        <textarea value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} rows={rows} style={shared} />
       ) : (
         <input type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} style={shared} />
       )}

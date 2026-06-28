@@ -97,3 +97,39 @@ func TestToggleLike_FlipsState(t *testing.T) {
 		t.Errorf("expected likedByMe=true likes=6, got %+v", out)
 	}
 }
+
+func TestDeletePost_Happy(t *testing.T) {
+	stub := newStub()
+	stub.posts["p1"] = models.Post{ID: "p1", AuthorID: "me", RideID: "r1"}
+	r, _ := buildAPI(t, stub)
+	rec := doJSON(t, r, "DELETE", "/api/posts/p1", nil)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, ok := stub.posts["p1"]; ok {
+		t.Errorf("post still present after delete")
+	}
+}
+
+func TestDeletePost_NotOwner_404(t *testing.T) {
+	stub := newStub()
+	stub.posts["p1"] = models.Post{ID: "p1", AuthorID: "u1", RideID: "r1"}
+	r, _ := buildAPI(t, stub)
+	// caller is "me", author is "u1" — must be 404 (no existence leak).
+	rec := doJSON(t, r, "DELETE", "/api/posts/p1", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status=%d want 404, body=%s", rec.Code, rec.Body.String())
+	}
+	if _, ok := stub.posts["p1"]; !ok {
+		t.Errorf("u1's post must not be deleted by another caller")
+	}
+}
+
+func TestDeletePost_NotFound_404(t *testing.T) {
+	stub := newStub()
+	r, _ := buildAPI(t, stub)
+	rec := doJSON(t, r, "DELETE", "/api/posts/missing", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status=%d want 404", rec.Code)
+	}
+}

@@ -121,6 +121,18 @@ func (a *API) GetPost(c *gin.Context) {
 	c.JSON(http.StatusOK, p.ToJSON())
 }
 
+// DeletePost removes one of the caller's own posts. Returns 204 on success
+// or 404 when the post isn't found OR isn't owned by the caller (no leak).
+func (a *API) DeletePost(c *gin.Context) {
+	uid := userID(c)
+	id := c.Param("id")
+	if err := a.Store.DeletePost(c.Request.Context(), uid, id); err != nil {
+		mapStoreErr(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // ToggleLike flips the like state and returns the resulting post (front end
 // expects the full PostJSON back — see rideRepo.ts).
 func (a *API) ToggleLike(c *gin.Context) {
