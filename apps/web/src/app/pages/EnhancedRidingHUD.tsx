@@ -515,7 +515,7 @@ export default function EnhancedRidingHUD() {
           className="absolute inset-0 pointer-events-none"
           style={{
             background:
-              "radial-gradient(ellipse 75% 55% at 50% 50%, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.6) 60%, rgba(0,0,0,0.88) 100%)",
+              "radial-gradient(ellipse 78% 58% at 50% 48%, rgba(10,14,22,0.18) 0%, rgba(10,14,22,0.34) 58%, rgba(10,14,22,0.72) 100%)",
           }}
         />
 

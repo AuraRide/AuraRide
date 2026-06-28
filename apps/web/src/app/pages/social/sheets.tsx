@@ -59,7 +59,7 @@ export function SocialSheets({ s }: { s: Social }) {
 
               {/* preview image */}
               <div style={{ position: "relative", height: 150, overflow: "hidden", clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, marginBottom: 18 }}>
-                <img src={cover} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                {cover && <img src={cover} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
                 <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(20,16,8,0.30) 0%, rgba(20,16,8,0) 40%, rgba(20,16,8,0) 55%, rgba(20,16,8,0.55) 100%)" }} />
                 <div style={{ position: "absolute", top: 10, left: 10, display: "flex", alignItems: "center", gap: 6, background: "rgba(20,16,8,0.45)", clipPath: STAIR, padding: "5px 9px" }}>
                   <span style={{ width: 9, height: 9, background: meta.color, clipPath: STAIR }} />

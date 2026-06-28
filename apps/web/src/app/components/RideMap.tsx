@@ -135,20 +135,30 @@ export default function RideMap({ track, themeColor }: RideMapProps) {
     return { d, start: screen[0], current: screen[screen.length - 1], W, H };
   }, [track]);
 
-  // Stylized dark "night map" backdrop (fixed seed → stable during the ride).
+  // Stylized "高德 dark navigation" backdrop (fixed seed → stable during the ride).
+  // This is the look you'd get with a live 高德 basemap; set VITE_AMAP_KEY and the
+  // component swaps to the real AMap (above) with no other change.
   const nightMap = useMemo(() => {
     const W = 360, H = 780;
-    const rnd = mulberry(7);
+    const r = mulberry(7);
     const tiles: Array<{ x: number; y: number; fill: string }> = [];
-    const palette = ["#10131a", "#0d1015", "#141822", "#0e1218"];
+    const pal = ["#1f2636", "#232b3d", "#1b2230", "#262e41"];
     for (let y = 0; y < H; y += 40)
-      for (let x = 0; x < W; x += 40) tiles.push({ x: x + 2, y: y + 2, fill: palette[Math.floor(rnd() * palette.length)] });
+      for (let x = 0; x < W; x += 40) tiles.push({ x: x + 1.5, y: y + 1.5, fill: pal[Math.floor(r() * pal.length)] });
     const parks: Array<{ x: number; y: number; w: number; h: number }> = [];
-    for (let i = 0; i < 4; i++) parks.push({ x: rnd() * W * 0.78, y: rnd() * H * 0.82, w: 50 + rnd() * 70, h: 44 + rnd() * 64 });
-    let rx = W * (0.18 + rnd() * 0.5);
+    for (let i = 0; i < 3; i++) parks.push({ x: r() * W * 0.76, y: r() * H * 0.82, w: 54 + r() * 74, h: 46 + r() * 66 });
+    let rx = W * (0.16 + r() * 0.5);
     const river: Array<[number, number]> = [];
-    for (let y = -20; y <= H + 20; y += 26) { rx += (rnd() - 0.5) * 46; river.push([Math.max(20, Math.min(W - 20, rx)), y]); }
-    return { W, H, tiles, parks, river };
+    for (let y = -20; y <= H + 20; y += 26) { rx += (r() - 0.5) * 48; river.push([Math.max(18, Math.min(W - 18, rx)), y]); }
+    // major arterials — gentle quadratic curves edge-to-edge
+    const edge = (): [number, number] => { const s = Math.floor(r() * 4), u = r(); return s === 0 ? [u * W, 0] : s === 1 ? [W, u * H] : s === 2 ? [u * W, H] : [0, u * H]; };
+    const majors: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const a = edge(), b = edge();
+      const mx = (a[0] + b[0]) / 2 + (r() - 0.5) * 150, my = (a[1] + b[1]) / 2 + (r() - 0.5) * 150;
+      majors.push(`M ${a[0].toFixed(0)} ${a[1].toFixed(0)} Q ${mx.toFixed(0)} ${my.toFixed(0)} ${b[0].toFixed(0)} ${b[1].toFixed(0)}`);
+    }
+    return { W, H, tiles, parks, river, majors };
   }, []);
 
   if (useRealMap) {
@@ -165,24 +175,31 @@ export default function RideMap({ track, themeColor }: RideMapProps) {
 
   // Fallback: trace canvas
   return (
-    <div className="absolute inset-0 bg-[#0a0c10] overflow-hidden">
-      {/* stylized dark night-map backdrop (blocks · roads · river · parks) */}
+    <div className="absolute inset-0 bg-[#1a2030] overflow-hidden">
+      {/* 高德 dark-navigation-style basemap (water · parks · road hierarchy) */}
       <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${nightMap.W} ${nightMap.H}`} preserveAspectRatio="xMidYMid slice" aria-hidden>
-        <rect width={nightMap.W} height={nightMap.H} fill="#0a0c10" />
+        <rect width={nightMap.W} height={nightMap.H} fill="#1a2030" />
         {nightMap.tiles.map((b, i) => (
-          <rect key={i} x={b.x} y={b.y} width={36} height={36} fill={b.fill} />
+          <rect key={i} x={b.x} y={b.y} width={37} height={37} fill={b.fill} />
         ))}
         {nightMap.parks.map((p, i) => (
-          <rect key={"p" + i} x={p.x} y={p.y} width={p.w} height={p.h} fill="#0f1d16" />
+          <rect key={"p" + i} x={p.x} y={p.y} width={p.w} height={p.h} rx={6} fill="#20392b" />
         ))}
-        <polyline points={nightMap.river.map((p) => p.join(",")).join(" ")} fill="none" stroke="#122436" strokeWidth="16" strokeLinejoin="round" strokeLinecap="round" />
-        <g stroke="#1b2230" strokeWidth="1.5">
+        {/* water */}
+        <polyline points={nightMap.river.map((p) => p.join(",")).join(" ")} fill="none" stroke="#163252" strokeWidth="20" strokeLinejoin="round" strokeLinecap="round" />
+        {/* minor road grid */}
+        <g stroke="#2b3447" strokeWidth="1.4">
           {Array.from({ length: Math.ceil(nightMap.W / 40) + 1 }).map((_, i) => (
             <line key={"v" + i} x1={i * 40} y1={0} x2={i * 40} y2={nightMap.H} />
           ))}
           {Array.from({ length: Math.ceil(nightMap.H / 40) + 1 }).map((_, i) => (
             <line key={"h" + i} x1={0} y1={i * 40} x2={nightMap.W} y2={i * 40} />
           ))}
+        </g>
+        {/* major arterials — dark casing + light fill */}
+        <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+          {nightMap.majors.map((d, i) => (<path key={"mc" + i} d={d} stroke="#10141e" strokeWidth="9" />))}
+          {nightMap.majors.map((d, i) => (<path key={"mf" + i} d={d} stroke="#69708a" strokeWidth="5" />))}
         </g>
       </svg>
 
@@ -209,6 +226,10 @@ export default function RideMap({ track, themeColor }: RideMapProps) {
           <div className="font-serif-cn text-[10px] tracking-[0.2em] text-white/30">定位锁定后，你的路线会实时画出</div>
         </div>
       )}
+      {/* map attribution — reads like an integrated SDK; remove "· 模拟" once a real key is set */}
+      <div style={{ position: "absolute", left: 8, bottom: 8, fontSize: 9, letterSpacing: 1, color: "rgba(255,255,255,0.55)", background: "rgba(0,0,0,0.32)", padding: "2px 7px", borderRadius: 3, pointerEvents: "none" }}>
+        高德地图 · 模拟
+      </div>
     </div>
   );
 }

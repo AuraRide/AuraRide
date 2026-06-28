@@ -1,4 +1,5 @@
-import { RideRecord, RidePhoto, replaceAllRides } from "./journal";
+import { RideRecord, replaceAllRides } from "./journal";
+import { PRESET_PHOTOS } from "./cityImages";
 
 // Demo data for previewing the journal / overview / summary without having to
 // ride first. Dev-only — surfaced behind import.meta.env.DEV in the UI.
@@ -24,33 +25,6 @@ const MOODS = [
   undefined,
 ];
 
-// Paint a small atmospheric thumbnail so the photo wall / overview look alive.
-function makePhoto(hex: string, caption: string, t: number, seed: number): RidePhoto {
-  const canvas = document.createElement("canvas");
-  canvas.width = 96;
-  canvas.height = 96;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return { dataUrl: "", color: hex, takenAt: t, caption };
-  const g = ctx.createLinearGradient(0, 0, 96, 96);
-  g.addColorStop(0, hex);
-  g.addColorStop(1, "#0a0c12");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 96, 96);
-  // a couple of soft light blobs, positioned deterministically by seed
-  ctx.globalAlpha = 0.22;
-  ctx.fillStyle = "#ffffff";
-  const r1 = 16 + (seed % 3) * 6;
-  ctx.beginPath();
-  ctx.arc(24 + (seed % 5) * 9, 30 + (seed % 4) * 10, r1, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 0.12;
-  ctx.beginPath();
-  ctx.arc(70 - (seed % 4) * 8, 64 + (seed % 3) * 7, 22, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  return { dataUrl: canvas.toDataURL("image/jpeg", 0.6), color: hex, takenAt: t, caption };
-}
-
 export function seedDemoRides(): number {
   const now = Date.now();
   const H = 3600000;
@@ -64,9 +38,13 @@ export function seedDemoRides(): number {
     const colorId = COLORS[i % COLORS.length];
     const hex = HEX[colorId];
     const started = now - off;
-    const photos = Array.from({ length: photoCounts[i] }, (_, k) =>
-      makePhoto(hex, CAPTIONS[(i * 3 + k) % CAPTIONS.length], started + k * 120000, i * 5 + k)
-    );
+    // real preset photos (city scenery), distinct per ride/photo
+    const photos = Array.from({ length: photoCounts[i] }, (_, k) => ({
+      dataUrl: PRESET_PHOTOS[(i * 4 + k) % PRESET_PHOTOS.length],
+      color: hex,
+      takenAt: started + k * 120000,
+      caption: CAPTIONS[(i * 3 + k) % CAPTIONS.length],
+    }));
     return {
       id: String(started),
       colorId,

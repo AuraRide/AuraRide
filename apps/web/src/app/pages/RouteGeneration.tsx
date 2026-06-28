@@ -216,12 +216,48 @@ export default function RouteGeneration() {
           return;
         }
 
-        // (b) three suggestions around the target distance, along spread bearings
+        // (b) three suggestions toward REAL nearby places, so every route follows
+        // real roads (never cuts across water / unreachable land). We pull POIs of
+        // this colour's environment type around the rider and pick three at
+        // near/mid/far distances; 骑行规划 then snaps the path to the road network.
+        // If no POI is found we fall back to bearing+distance points.
         const jitter = (regenKey * 47) % 60;
+        let dests: Array<LngLat | null> = [null, null, null];
+        try {
+          await loadPlugin(AMap, "AMap.PlaceSearch");
+          if (cancelled) return;
+          const radius = Math.min(50000, Math.max(1500, Math.round(targetKm * 850)));
+          const pois: any[] = await new Promise((res) => {
+            const ps = new AMap.PlaceSearch({ pageSize: 25, pageIndex: 1 });
+            ps.searchNearBy(theme.poi, [start.lng, start.lat], radius, (st: string, result: any) => {
+              res((st === "complete" && result?.poiList?.pois) || []);
+            });
+          });
+          const cand = pois
+            .filter((p) => p.location)
+            .map((p) => ({ lng: p.location.lng, lat: p.location.lat, d: p.distance ?? 0 }))
+            .sort((a, b) => a.d - b.d);
+          if (cand.length) {
+            // pick the POI whose straight-line distance is closest to a target (so
+            // routes track 目标里程 instead of shooting to whatever park is farthest)
+            const pick = (targetM: number): LngLat => {
+              let best = cand[0];
+              for (const c of cand) if (Math.abs(c.d - targetM) < Math.abs(best.d - targetM)) best = c;
+              return { lng: best.lng, lat: best.lat };
+            };
+            const km = targetKm * 1000;
+            const j = 1 + (regenKey % 3) * 0.12; // 换一批 nudges the targets
+            dests = [pick(km * 0.3 * j), pick(km * 0.55 * j), pick(km * 0.85 * j)];
+          }
+        } catch {
+          /* no POIs → bearing fallback below */
+        }
+        if (cancelled) return;
+
         const results = await Promise.all(
           SPREAD.map(async (s, i) => {
             const oneWay = (targetKm * s) / (mode === "outback" ? 2 : 1);
-            const dest = destPoint(start.lat, start.lng, ROUTE_VARIANTS[i].bearing + jitter, oneWay);
+            const dest = dests[i] || destPoint(start.lat, start.lng, ROUTE_VARIANTS[i].bearing + jitter, oneWay);
             const r = await planRoute(AMap, start, dest);
             if (!r) return null;
             const total = mode === "outback" ? +(r.distanceKm * 2).toFixed(1) : +r.distanceKm.toFixed(1);
@@ -330,7 +366,6 @@ export default function RouteGeneration() {
     // Only fit the *selected* route + start marker — packing all 3 fan-out
     // routes shrinks zoom to city-wide ("能看到整个上海").
     const fitTargets: any[] = [];
-
     routes.forEach((r, idx) => {
       if (!r.path.length) return;
       const sel = idx === selected;
@@ -361,8 +396,9 @@ export default function RouteGeneration() {
       if (sel) fitTargets.push(pl, em);
     });
 
+    let startMk: any = null;
     if (start) {
-      const sm = new AMap.CircleMarker({
+      startMk = new AMap.CircleMarker({
         center: [start.lng, start.lat],
         radius: 7,
         fillColor: theme.color,
@@ -371,14 +407,14 @@ export default function RouteGeneration() {
         strokeWeight: 2,
         zIndex: 200,
       });
-      map.add(sm);
-      overlaysRef.current.push(sm);
-      fitTargets.push(sm);
+      map.add(startMk);
+      overlaysRef.current.push(startMk);
+      fitTargets.push(startMk);
     }
 
     try {
-      // Reserve the bottom sheet's real height (it grew with the new controls) so
-      // the route is fitted into the *visible* map area — no manual zoom needed.
+      // Fit the SELECTED route (+ start) into the visible map area — not all three,
+      // whose far ends would zoom the map out until each route is a few pixels.
       const padBottom = (panelRef.current?.offsetHeight ?? 340) + 24;
       // immediate=true so getZoom() reads the final value; false animates and
       // the clamp would catch the *animation start*, not the destination.

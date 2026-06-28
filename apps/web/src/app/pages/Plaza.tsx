@@ -94,7 +94,7 @@ export default function Plaza() {
                 style={{ background: "#fffdf7", clipPath: STAIR, boxShadow: "inset 0 0 0 2px " + PIXEL_OUT, overflow: "hidden", cursor: "pointer" }}
               >
                 <div style={{ position: "relative", height: 150, background: `linear-gradient(150deg, ${p.coverColor} 0%, ${meta.color}cc 60%, ${p.coverColor}88 100%)` }}>
-                  <img src={cover} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                  {cover && <img src={cover} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
                   <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(20,16,8,0.28) 0%, rgba(20,16,8,0) 32%, rgba(20,16,8,0) 70%, rgba(20,16,8,0.30) 100%)" }} />
                   {p.photoUrls.length > 1 && (
                     <div style={{ position: "absolute", bottom: 10, left: 10, background: "rgba(20,16,8,0.5)", clipPath: STAIR, padding: "3px 8px", color: "#fff", fontSize: 11, fontWeight: 800 }}>+{p.photoUrls.length - 1}</div>
