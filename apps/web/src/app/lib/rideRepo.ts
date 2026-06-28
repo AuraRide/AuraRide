@@ -22,6 +22,7 @@ import {
 } from "./journal";
 import { downscaleDataUrl } from "./image";
 import { buildPalette } from "./weave";
+import { cityImageCount } from "./cityImages";
 
 export type { RideRecord, RidePhoto };
 
@@ -221,6 +222,8 @@ const SHOW_SAMPLE_FEED = true;
 const COLOR_KEYS = ["calm-green", "lonely-blue", "explore-yellow", "release-red", "tired-gray"];
 
 // city string keeps a landmark keyword so CityAvatar can match it
+// Only cities we have real photos for (see lib/cityImages.ts) — the feed shows
+// real covers and no blank/placeholder presets.
 const REGIONS: Array<{ city: string; primary: string }> = [
   { city: "北京 · 朝阳", primary: "tired-gray" },
   { city: "上海 · 北外滩", primary: "lonely-blue" },
@@ -229,33 +232,12 @@ const REGIONS: Array<{ city: string; primary: string }> = [
   { city: "河北 · 山海关", primary: "tired-gray" },
   { city: "山西 · 平遥", primary: "explore-yellow" },
   { city: "辽宁 · 大连", primary: "lonely-blue" },
-  { city: "吉林 · 长春", primary: "tired-gray" },
-  { city: "黑龙江 · 哈尔滨", primary: "tired-gray" },
   { city: "江苏 · 南京", primary: "calm-green" },
   { city: "浙江 · 西湖", primary: "calm-green" },
   { city: "安徽 · 黄山", primary: "calm-green" },
   { city: "福建 · 厦门", primary: "lonely-blue" },
   { city: "江西 · 滕王阁", primary: "calm-green" },
-  { city: "山东 · 青岛", primary: "explore-yellow" },
-  { city: "河南 · 郑州", primary: "explore-yellow" },
-  { city: "湖北 · 黄鹤楼", primary: "lonely-blue" },
-  { city: "湖南 · 橘子洲", primary: "release-red" },
   { city: "广东 · 珠江", primary: "release-red" },
-  { city: "海南 · 三亚", primary: "explore-yellow" },
-  { city: "四川 · 锦江", primary: "explore-yellow" },
-  { city: "贵州 · 黄果树", primary: "calm-green" },
-  { city: "云南 · 大理", primary: "calm-green" },
-  { city: "陕西 · 西安", primary: "explore-yellow" },
-  { city: "甘肃 · 敦煌", primary: "explore-yellow" },
-  { city: "青海 · 青海湖", primary: "lonely-blue" },
-  { city: "台湾 · 台北", primary: "calm-green" },
-  { city: "内蒙古 · 呼伦贝尔", primary: "calm-green" },
-  { city: "广西 · 桂林", primary: "calm-green" },
-  { city: "西藏 · 拉萨", primary: "lonely-blue" },
-  { city: "宁夏 · 银川", primary: "tired-gray" },
-  { city: "新疆 · 天山", primary: "explore-yellow" },
-  { city: "香港 · 维港", primary: "lonely-blue" },
-  { city: "澳门 · 大三巴", primary: "release-red" },
 ];
 
 let _sampleCache: Post[] | null = null;
@@ -271,7 +253,9 @@ function buildSampleFeed(): Post[] {
       a = (a * 1664525 + 1013904223) % 4294967296;
       return a / 4294967296;
     };
-    const k = 2 + Math.floor(rnd() * 2); // 2 or 3 rides per region
+    // cap rides-per-region at the number of distinct photos this city has, so each
+    // post gets a unique cover (no repeated images in the feed)
+    const k = Math.min(2 + Math.floor(rnd() * 2), Math.max(1, cityImageCount(rg.city)));
     for (let j = 0; j < k; j++) {
       // mostly the region's primary colour, with some variation
       const colorId = rnd() < 0.7 ? rg.primary : COLOR_KEYS[Math.floor(rnd() * COLOR_KEYS.length)];
