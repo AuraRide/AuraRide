@@ -15,7 +15,11 @@ import (
 // 改 markerKey 触发 re-seed —— 已存在的行 ON CONFLICT 跳过,只插新的
 // v3 -> v4:加 demo comments + 1 saved_route(me 收藏 u4 的 release-red post),
 // 让 Plaza 评论区 / ColorMemory 收藏 tab 第一次打开就不空
-const markerKey = "v4"
+// v4 -> v5:接 SeedPhotoURLs 进 buildPhotos,40 张占位 COS URL 换成真
+// Unsplash CDN 直链 —— ColorMemory / Plaza / RideReview 终于有图。
+// 注:photos 表 ON CONFLICT (id) DO NOTHING,旧 v4 行会留下;
+// 本机重置:docker compose down -v && up -d --build api
+const markerKey = "v5"
 
 // RunIfEnabled inserts the demo dataset once per database. Subsequent calls
 // notice the marker row and return immediately.
