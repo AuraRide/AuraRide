@@ -45,6 +45,48 @@ var Rides = []SeedRide{
 	{"r-me-jingan", "me", "explore-yellow", 7.1, 2520, 1718244600000, "静安寺到南京西路,招牌是橙色的。", "#FFB54A", "上海 · 静安", 5},
 }
 
+// SeedComment expands into one row of the `comments` table at seed time. Each
+// post 上挂 1-2 条,广场打开就有真互动可见。
+type SeedComment struct {
+	ID        string
+	PostID    string
+	AuthorID  string
+	Text      string
+	CreatedAt int64
+}
+
+// Comments — each seed post gets 1-2 comments from a sibling user so 广场 /
+// Plaza 的评论区在第一次打开就不空。
+var Comments = []SeedComment{
+	// u1 北外滩 (calm-green)
+	{"cm-binjiang-1", "post-r-binjiang", "u2", "傍晚那段光真好看。", 1718506800000},
+	{"cm-binjiang-2", "post-r-binjiang", "me", "下次一起。", 1718507400000},
+	// u2 苏州河 (lonely-blue)
+	{"cm-suzhou-1", "post-r-suzhou", "u3", "深水区的色织最稳。", 1718420400000},
+	// u3 衡复 (explore-yellow)
+	{"cm-hengfu-1", "post-r-hengfu", "me", "我也想去走一趟。", 1718334000000},
+	{"cm-hengfu-2", "post-r-hengfu", "u4", "老城的回声 +1。", 1718335800000},
+	// u4 杨浦滨江 (release-red)
+	{"cm-yangpu-1", "post-r-yangpu", "u1", "直道燃尽这名字太对了。", 1718247600000},
+	// u5 后滩 (tired-gray)
+	{"cm-houtan-1", "post-r-houtan", "me", "灰白比想象中好看。", 1718161200000},
+}
+
+// SeedSavedRoute mirrors models.SavedRoute but at seed-time shape — only the
+// minimum 字段 we需要; route_shape/cover_color 直接抄 from the source post.
+type SeedSavedRoute struct {
+	ID         string
+	UserID     string
+	FromPostID string // always references an existing post in this seed batch
+	SavedAt    int64
+}
+
+// SavedRoutes — me 收藏了 u4 的 release-red 杨浦滨江,所以 /saved-routes 不空,
+// /saved-routes/ids 返 ["post-r-yangpu"](Plaza 上"已收藏"badge 第一次就有得展示)。
+var SavedRoutes = []SeedSavedRoute{
+	{"sr-me-yangpu", "me", "post-r-yangpu", 1718510000000},
+}
+
 // buildPhotos returns the photo rows for one ride.
 func buildPhotos(r SeedRide, bucket, region string) []models.Photo {
 	out := make([]models.Photo, r.PhotoCount)

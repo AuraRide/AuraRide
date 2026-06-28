@@ -13,8 +13,9 @@ import (
 )
 
 // 改 markerKey 触发 re-seed —— 已存在的行 ON CONFLICT 跳过,只插新的
-// v2 -> v3:加 me 的 3 条骑行(上次 data.go 没真改进 commit)
-const markerKey = "v3"
+// v3 -> v4:加 demo comments + 1 saved_route(me 收藏 u4 的 release-red post),
+// 让 Plaza 评论区 / ColorMemory 收藏 tab 第一次打开就不空
+const markerKey = "v4"
 
 // RunIfEnabled inserts the demo dataset once per database. Subsequent calls
 // notice the marker row and return immediately.
@@ -57,11 +58,81 @@ func RunIfEnabled(ctx context.Context, s *store.Store, cfg *config.Config) error
 	if err = seedRides(ctx, tx, cfg); err != nil {
 		return err
 	}
+	if err = seedComments(ctx, tx); err != nil {
+		return err
+	}
+	if err = seedSavedRoutes(ctx, tx); err != nil {
+		return err
+	}
 
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("seed: commit: %w", err)
 	}
-	log.Printf("seed: inserted %d users + %d rides", len(Users), len(Rides))
+	log.Printf("seed: inserted %d users + %d rides + %d comments + %d saved_routes",
+		len(Users), len(Rides), len(Comments), len(SavedRoutes))
+	return nil
+}
+
+func seedComments(ctx context.Context, tx *sql.Tx) error {
+	for _, c := range Comments {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO comments (id, post_id, author_id, text, created_at)
+			 VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT (id) DO NOTHING`,
+			c.ID, c.PostID, c.AuthorID, c.Text, c.CreatedAt,
+		); err != nil {
+			return fmt.Errorf("seed comment %s: %w", c.ID, err)
+		}
+	}
+	return nil
+}
+
+func seedSavedRoutes(ctx context.Context, tx *sql.Tx) error {
+	// shape + cover come from the source post — we re-derive shape using the
+	// same seed function so the saved row mirrors what the front end would
+	// have drawn if the user had tapped 复制路线 on Plaza.
+	for _, sr := range SavedRoutes {
+		// look up the source post fields from the seed slice
+		var post *models.Post
+		for i, r := range Rides {
+			if "post-"+r.ID == sr.FromPostID {
+				durMin := r.DurationSec / 60
+				if durMin < 1 {
+					durMin = 1
+				}
+				post = &models.Post{
+					ID:          "post-" + r.ID,
+					ColorID:     r.ColorID,
+					City:        r.City,
+					DistanceKm:  r.Distance,
+					DurationMin: durMin,
+					CoverColor:  r.DominantColor,
+					RouteShape:  shapeFromSeed(int64(97+i*53), 14),
+					Caption:     &r.MoodText,
+				}
+				break
+			}
+		}
+		if post == nil {
+			return fmt.Errorf("seed saved_route %s: source post not found", sr.ID)
+		}
+		shape, err := marshalJSON(post.RouteShape)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO saved_routes
+			   (id, user_id, from_post_id, color_id, city, distance_km, duration_min,
+			    route_shape, cover_color, caption, saved_at)
+			 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			 ON CONFLICT (id) DO NOTHING`,
+			sr.ID, sr.UserID, sr.FromPostID, post.ColorID, post.City,
+			post.DistanceKm, post.DurationMin, shape, post.CoverColor,
+			nullableCap(post.Caption), sr.SavedAt,
+		); err != nil {
+			return fmt.Errorf("seed saved_route %s: %w", sr.ID, err)
+		}
+	}
 	return nil
 }
 

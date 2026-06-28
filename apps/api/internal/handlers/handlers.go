@@ -39,6 +39,18 @@ type Querier interface {
 	ListFeed(ctx context.Context, viewerID string, filter store.FeedFilter) ([]models.Post, error)
 	IsPublished(ctx context.Context, rideID string) (bool, error)
 	ToggleLike(ctx context.Context, userID, postID string) (*models.Post, error)
+	DeletePost(ctx context.Context, userID, id string) error
+
+	// comments
+	ListComments(ctx context.Context, postID string) ([]models.Comment, error)
+	InsertComment(ctx context.Context, c models.Comment) (*models.Comment, error)
+	CommentCounts(ctx context.Context) (map[string]int, error)
+
+	// saved_routes (待出行路线 — routes copied from posts, planned but not ridden)
+	ListSavedRoutes(ctx context.Context, userID string) ([]models.SavedRoute, error)
+	InsertSavedRoute(ctx context.Context, r models.SavedRoute) (*models.SavedRoute, error)
+	DeleteSavedRoute(ctx context.Context, userID, id string) error
+	ListSavedPostIds(ctx context.Context, userID string) ([]string, error)
 
 	// photos
 	InsertPhoto(ctx context.Context, p models.Photo) error
@@ -124,9 +136,19 @@ func (a *API) Register(r *gin.Engine) {
 
 		api.POST("/posts", a.PublishRide)
 		api.GET("/posts/published/:rideId", a.IsPublished)
+		api.GET("/posts/comment-counts", a.CommentCounts) // BEFORE /posts/:id so gin doesn't bind "comment-counts" as :id
 		api.GET("/posts", a.ListFeed)
 		api.GET("/posts/:id", a.GetPost)
+		api.DELETE("/posts/:id", a.DeletePost)
 		api.POST("/posts/:id/like", a.ToggleLike)
+
+		api.GET("/posts/:id/comments", a.ListComments)
+		api.POST("/posts/:id/comments", a.AddComment)
+
+		api.GET("/saved-routes", a.ListSavedRoutes)
+		api.POST("/saved-routes", a.SaveRouteFromPost)
+		api.GET("/saved-routes/ids", a.SavedRouteIds)
+		api.DELETE("/saved-routes/:id", a.RemoveSavedRoute)
 
 		api.POST("/photos/sts", a.PhotoSTS)
 		api.POST("/photos/commit", a.PhotoCommit)
