@@ -240,4 +240,21 @@ export const apiRepo: RideRepo = {
       return localRepo.savedRouteIds();
     }
   },
+
+  // own published posts — delete server-side (backend checks author == current user)
+  async deletePost(postId) {
+    try {
+      await jsonFetch<void>(url(`/api/posts/${encodeURIComponent(postId)}`), { method: "DELETE" });
+    } catch (e) {
+      warn("deletePost", e);
+      return localRepo.deletePost(postId);
+    }
+  },
+
+  // Active ride (断点续骑) is intentionally localStorage-only — it's a high-frequency
+  // snapshot (every few seconds) of transient state, not worth Postgres bandwidth.
+  // These three stubs satisfy the RideRepo contract while deferring to localRepo.
+  async saveActiveRide(state) { return localRepo.saveActiveRide(state); },
+  async getActiveRide() { return localRepo.getActiveRide(); },
+  async clearActiveRide() { return localRepo.clearActiveRide(); },
 };
