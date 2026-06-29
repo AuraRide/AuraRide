@@ -21,7 +21,10 @@ import (
 // 行(seed-* / cm-* / sr-* / post-r-*),让 markerKey++ = "新版数据全
 // 量重灌",生产 deploy mvp-a→main 后自动同步,无需手动 SQL。
 // 真用户数据 id 不带这些 prefix,完全不受影响。
-const markerKey = "v6"
+// v6 -> v7:SeedPhotoURLs 从 Unsplash 换到腾讯云 COS — Unsplash 国内
+// 移动网络经常不通/慢,生产 plaza 手机访问图加载不出。COS 走国内 CDN
+// 稳定。32 张已 coscmd 上传到 seed-photos/<rideID>-<idx>.jpg。
+const markerKey = "v7"
 
 // RunIfEnabled inserts the demo dataset once per database. Subsequent calls
 // notice the marker row and return immediately.
