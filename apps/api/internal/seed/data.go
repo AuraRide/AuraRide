@@ -88,67 +88,36 @@ var SavedRoutes = []SeedSavedRoute{
 }
 
 // SeedPhotoURLs maps rideID -> public CDN URLs. Replaces the bucket-derived
-// COS placeholders when present, so demo data renders even with COS_BUCKET="".
-// Source: Unsplash (CC0). Hand-picked per route to match the ride's ColorID,
-// 4 张/路线;若 PhotoCount>4 余下 fallback 原 COS pattern。等真 upload
-// 管线接入后,这张 map 整体可删。
+// COS placeholders when present, so demo data renders.
+//
+// 图源 = 腾讯云 COS bucket auraride-photos-1315627382/seed-photos/,公有读。
+// 原图来自 Unsplash (CC0) 手挑,按 ColorID 选色调,curl 下载后 coscmd 上传到
+// seed-photos/<rideID>-<idx>.jpg。改用国内 CDN 是因为 Unsplash 在国内移动
+// 网络下经常不通/极慢,生产 plaza 手机访问看不到图。
+// 4 张/路线;若 PhotoCount>4 余下 fallback 原 bucket pattern(死链)。
+var seedPhotoCDN = "https://auraride-photos-1315627382.cos.ap-shanghai.myqcloud.com/seed-photos"
+
+func cosPhoto(name string) string {
+	return seedPhotoCDN + "/" + name + ".jpg"
+}
+
 var SeedPhotoURLs = map[string][]string{
 	// r-binjiang | calm-green | 北外滩 — 江堤树荫 + 暖绿
-	"r-binjiang": {
-		"https://images.unsplash.com/photo-1666038892520-73239ca693ea?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1666038892533-c9e63d598133?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1745817239000-82cbdb25fe0e?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1658950454324-a1a9f2f60581?w=1200&q=80&auto=format&fit=crop",
-	},
+	"r-binjiang": {cosPhoto("r-binjiang-1"), cosPhoto("r-binjiang-2"), cosPhoto("r-binjiang-3"), cosPhoto("r-binjiang-4")},
 	// r-suzhou | lonely-blue | 苏州河 — 桥洞水蓝 + 雾
-	"r-suzhou": {
-		"https://images.unsplash.com/photo-1661884958829-65b94795695b?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1575715238646-9455cf04e02c?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1768042296424-ee67766b1cbc?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1747003389183-86aaf6c9189b?w=1200&q=80&auto=format&fit=crop",
-	},
+	"r-suzhou": {cosPhoto("r-suzhou-1"), cosPhoto("r-suzhou-2"), cosPhoto("r-suzhou-3"), cosPhoto("r-suzhou-4")},
 	// r-hengfu | explore-yellow | 衡复风貌区 — 法桐金光 + 老洋房
-	"r-hengfu": {
-		"https://images.unsplash.com/photo-1464211892349-8e50a8045e67?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1636669669918-7979f88ed577?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1577076095493-84c0fb567da3?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1720749408082-5717402930a2?w=1200&q=80&auto=format&fit=crop",
-	},
+	"r-hengfu": {cosPhoto("r-hengfu-1"), cosPhoto("r-hengfu-2"), cosPhoto("r-hengfu-3"), cosPhoto("r-hengfu-4")},
 	// r-yangpu | release-red | 杨浦滨江 — 工业砖红 + 钢架
-	"r-yangpu": {
-		"https://images.unsplash.com/photo-1541036734234-c7ce16051483?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1654763001401-beb44e40eb6c?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1668172603305-64a38a7f1fa1?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1703126806617-fc8fd6f3648c?w=1200&q=80&auto=format&fit=crop",
-	},
+	"r-yangpu": {cosPhoto("r-yangpu-1"), cosPhoto("r-yangpu-2"), cosPhoto("r-yangpu-3"), cosPhoto("r-yangpu-4")},
 	// r-houtan | tired-gray | 后滩公园 — 湿地灰雾
-	"r-houtan": {
-		"https://images.unsplash.com/photo-1489179070830-36477bd83c93?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1608096344583-844d5767bea4?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1633727896813-da9ddc925ca3?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1573669004223-af922fd838df?w=1200&q=80&auto=format&fit=crop",
-	},
-	// r-me-pudong | calm-green | 陆家嘴 — 桥洞 + 绿光水面(同色另选,避免和 binjiang 撞图)
-	"r-me-pudong": {
-		"https://images.unsplash.com/photo-1780317545103-28b643e93e65?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1779023016870-d5e0cee69e08?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1758609555076-f77760673825?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1762146994839-5d7974a8388a?w=1200&q=80&auto=format&fit=crop",
-	},
-	// r-me-xuhui | lonely-blue | 徐汇滨江 — 雨后蓝 + 滨江(同色另选,避免和 suzhou 撞图)
-	"r-me-xuhui": {
-		"https://images.unsplash.com/photo-1580895456895-cfdf02e4c23f?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1601042879364-f3947d3f9c16?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1517328894681-0f5dfabd463c?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1554103577-c0d26e9b90e0?w=1200&q=80&auto=format&fit=crop",
-	},
-	// r-me-jingan | explore-yellow | 静安 — 寺顶金 + 招牌橙(同色另选,避免和 hengfu 撞图)
-	"r-me-jingan": {
-		"https://images.unsplash.com/photo-1665331819009-e1596d68b44f?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1614892624996-a12ef5292a2d?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1681063966525-91ca89077296?w=1200&q=80&auto=format&fit=crop",
-		"https://images.unsplash.com/photo-1532016175637-f77031900bad?w=1200&q=80&auto=format&fit=crop",
-	},
+	"r-houtan": {cosPhoto("r-houtan-1"), cosPhoto("r-houtan-2"), cosPhoto("r-houtan-3"), cosPhoto("r-houtan-4")},
+	// r-me-pudong | calm-green | 陆家嘴(同色另选,避免和 binjiang 撞图)
+	"r-me-pudong": {cosPhoto("r-me-pudong-1"), cosPhoto("r-me-pudong-2"), cosPhoto("r-me-pudong-3"), cosPhoto("r-me-pudong-4")},
+	// r-me-xuhui | lonely-blue | 徐汇滨江(同色另选,避免和 suzhou 撞图)
+	"r-me-xuhui": {cosPhoto("r-me-xuhui-1"), cosPhoto("r-me-xuhui-2"), cosPhoto("r-me-xuhui-3"), cosPhoto("r-me-xuhui-4")},
+	// r-me-jingan | explore-yellow | 静安(同色另选,避免和 hengfu 撞图)
+	"r-me-jingan": {cosPhoto("r-me-jingan-1"), cosPhoto("r-me-jingan-2"), cosPhoto("r-me-jingan-3"), cosPhoto("r-me-jingan-4")},
 }
 
 // buildPhotos returns the photo rows for one ride.
